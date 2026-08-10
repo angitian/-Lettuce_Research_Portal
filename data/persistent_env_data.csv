@@ -1,0 +1,5 @@
+week_no,temp_c,ppfd_control_gm,ppfd_led_gm,ppfd_control_f,ppfd_led_f1,ppfd_led_f2,soil_ph,soil_ec,soil_om,soil_total_n,soil_avail_p,soil_avail_k,soil_texture
+1,,,,,,,,,,,,,Sandy Loam
+2,,,,,,,,,,,,,Sandy Loam
+3,,,,,,,,,,,,,Sandy Loam
+4,,,,,,,,,,,,,Sandy Loam
