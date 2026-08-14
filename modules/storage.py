@@ -17,6 +17,8 @@ import modules.logger_processing as logger_processing
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
 EXP_STORAGE_PATH = os.path.join(DATA_DIR, "saved_experiment_data.csv")
 ENV_STORAGE_PATH = os.path.join(DATA_DIR, "saved_env_data.csv")
+PPFD_LOGGER_PATH = os.path.join(DATA_DIR, "accumulated_ppfd_logger.csv")
+TEMP_LOGGER_PATH = os.path.join(DATA_DIR, "accumulated_temp_logger.csv")
 
 
 def ensure_all_columns_exist(df):
@@ -58,7 +60,17 @@ def generate_empty_dataset():
 
 
 def generate_empty_environment_data():
-    """Generates an empty dataframe for 4 weeks of greenhouse and soil logger data."""
+    """Generates an empty environment dataframe with all required columns and 0 rows."""
+    env_columns = [
+        "week_no", "temp_c", "ppfd_control_gm", "ppfd_led_gm", "ppfd_control_f",
+        "ppfd_led_f1", "ppfd_led_f2", "soil_ph", "soil_ec", "soil_om",
+        "soil_total_n", "soil_avail_p", "soil_avail_k", "soil_texture"
+    ]
+    return pd.DataFrame(columns=env_columns)
+
+
+def generate_env_template():
+    """Generates a 4-week template for greenhouse and soil logger data entry."""
     env_rows = []
     for w in range(1, 5):
         env_rows.append({
@@ -75,7 +87,7 @@ def generate_empty_environment_data():
             "soil_total_n": np.nan,
             "soil_avail_p": np.nan,
             "soil_avail_k": np.nan,
-            "soil_texture": "Sandy Loam"
+            "soil_texture": None
         })
     return pd.DataFrame(env_rows)
 
@@ -120,17 +132,13 @@ def save_env_data_to_disk(df):
 
 
 def clear_disk_storage():
-    """Clears local persistent storage files."""
-    if os.path.exists(EXP_STORAGE_PATH):
-        try:
-            os.remove(EXP_STORAGE_PATH)
-        except Exception:
-            pass
-    if os.path.exists(ENV_STORAGE_PATH):
-        try:
-            os.remove(ENV_STORAGE_PATH)
-        except Exception:
-            pass
+    """Clears local persistent storage files including accumulated logger data."""
+    for p in [EXP_STORAGE_PATH, ENV_STORAGE_PATH, PPFD_LOGGER_PATH, TEMP_LOGGER_PATH]:
+        if os.path.exists(p):
+            try:
+                os.remove(p)
+            except Exception:
+                pass
 
 
 def initialize_session_state():

@@ -45,6 +45,7 @@ parse_uploaded_excel = getattr(storage, "parse_uploaded_excel")
 render_indexeddb_component = getattr(storage, "render_indexeddb_component")
 generate_empty_dataset = getattr(storage, "generate_empty_dataset")
 generate_empty_environment_data = getattr(storage, "generate_empty_environment_data")
+generate_env_template = getattr(storage, "generate_env_template")
 save_experiment_data_to_disk = getattr(storage, "save_experiment_data_to_disk")
 save_env_data_to_disk = getattr(storage, "save_env_data_to_disk")
 clear_disk_storage = getattr(storage, "clear_disk_storage")
@@ -155,6 +156,7 @@ with st.sidebar:
         st.session_state.env_data = generate_empty_environment_data()
         st.session_state.logger_ppfd = pd.DataFrame()
         st.session_state.logger_temp = pd.DataFrame()
+        st.session_state.ppfd_channel_mapping = {}
         st.session_state.selected_date = START_DATE
         st.success("ล้างข้อมูลทั้งหมดเรียบร้อยแล้ว!")
         st.rerun()
@@ -671,29 +673,37 @@ with tab2:
         env_df = st.session_state.env_data.copy()
         soil_cols = ["week_no", "soil_ph", "soil_ec", "soil_om", "soil_total_n", "soil_avail_p", "soil_avail_k", "soil_texture"]
         
-        edited_soil_df = st.data_editor(
-            env_df[soil_cols],
-            key="soil_data_editor",
-            column_config={
-                "week_no": st.column_config.NumberColumn("Week", disabled=True),
-                "soil_ph": st.column_config.NumberColumn("Soil pH", min_value=1.0, max_value=14.0, step=0.1, format="%.1f", help=METRIC_TOOLTIPS.get("soil_ph", "")),
-                "soil_ec": st.column_config.NumberColumn("Soil EC (dS/m)", min_value=0.0, max_value=10.0, step=0.01, format="%.2f", help=METRIC_TOOLTIPS.get("soil_ec", "")),
-                "soil_om": st.column_config.NumberColumn("Organic Matter (%)", min_value=0.0, max_value=100.0, step=0.1, format="%.1f", help=METRIC_TOOLTIPS.get("soil_om", "")),
-                "soil_total_n": st.column_config.NumberColumn("Total Nitrogen (%)", min_value=0.0, max_value=10.0, step=0.01, format="%.2f", help=METRIC_TOOLTIPS.get("soil_total_n", "")),
-                "soil_avail_p": st.column_config.NumberColumn("Avail. P (mg/kg)", min_value=0.0, max_value=500.0, step=0.1, format="%.1f", help=METRIC_TOOLTIPS.get("soil_avail_p", "")),
-                "soil_avail_k": st.column_config.NumberColumn("Avail. K (mg/kg)", min_value=0.0, max_value=1000.0, step=0.1, format="%.1f", help=METRIC_TOOLTIPS.get("soil_avail_k", "")),
-                "soil_texture": st.column_config.SelectboxColumn("Soil Texture", options=["Sandy Loam", "Loam", "Clay Loam", "Silt Loam"], help="ลักษณะเนื้อดินปลูกในแปลงทดลอง")
-            },
-            use_container_width=True,
-            num_rows="fixed"
-        )
-        for col in ["soil_ph", "soil_ec", "soil_om", "soil_total_n", "soil_avail_p", "soil_avail_k", "soil_texture"]:
-            st.session_state.env_data[col] = edited_soil_df[col]
-        save_env_data_to_disk(st.session_state.env_data)
-        
-        if st.button("💾 บันทึกข้อมูลเคมีดิน", key="btn_save_soil"):
+        if env_df.empty:
+            st.info("ยังไม่มีข้อมูลสภาพแวดล้อม กรุณาโหลดแม่แบบเพื่อเริ่มกรอกข้อมูล")
+            if st.button("โหลดแม่แบบ 4 สัปดาห์", key="btn_load_env_template"):
+                st.session_state.env_data = generate_env_template()
+                save_env_data_to_disk(st.session_state.env_data)
+                st.success("โหลดแม่แบบสภาพแวดล้อมเรียบร้อยแล้ว")
+                st.rerun()
+        else:
+            edited_soil_df = st.data_editor(
+                env_df[soil_cols],
+                key="soil_data_editor",
+                column_config={
+                    "week_no": st.column_config.NumberColumn("Week", disabled=True),
+                    "soil_ph": st.column_config.NumberColumn("Soil pH", min_value=1.0, max_value=14.0, step=0.1, format="%.1f", help=METRIC_TOOLTIPS.get("soil_ph", "")),
+                    "soil_ec": st.column_config.NumberColumn("Soil EC (dS/m)", min_value=0.0, max_value=10.0, step=0.01, format="%.2f", help=METRIC_TOOLTIPS.get("soil_ec", "")),
+                    "soil_om": st.column_config.NumberColumn("Organic Matter (%)", min_value=0.0, max_value=100.0, step=0.1, format="%.1f", help=METRIC_TOOLTIPS.get("soil_om", "")),
+                    "soil_total_n": st.column_config.NumberColumn("Total Nitrogen (%)", min_value=0.0, max_value=10.0, step=0.01, format="%.2f", help=METRIC_TOOLTIPS.get("soil_total_n", "")),
+                    "soil_avail_p": st.column_config.NumberColumn("Avail. P (mg/kg)", min_value=0.0, max_value=500.0, step=0.1, format="%.1f", help=METRIC_TOOLTIPS.get("soil_avail_p", "")),
+                    "soil_avail_k": st.column_config.NumberColumn("Avail. K (mg/kg)", min_value=0.0, max_value=1000.0, step=0.1, format="%.1f", help=METRIC_TOOLTIPS.get("soil_avail_k", "")),
+                    "soil_texture": st.column_config.SelectboxColumn("Soil Texture", options=["Sandy Loam", "Loam", "Clay Loam", "Silt Loam"], help="ลักษณะเนื้อดินปลูกในแปลงทดลอง")
+                },
+                use_container_width=True,
+                num_rows="fixed"
+            )
+            for col in ["soil_ph", "soil_ec", "soil_om", "soil_total_n", "soil_avail_p", "soil_avail_k", "soil_texture"]:
+                st.session_state.env_data[col] = edited_soil_df[col]
             save_env_data_to_disk(st.session_state.env_data)
-            st.success("✅ บันทึกข้อมูลเคมีดินเรียบร้อยแล้ว!")
+            
+            if st.button("💾 บันทึกข้อมูลเคมีดิน", key="btn_save_soil"):
+                save_env_data_to_disk(st.session_state.env_data)
+                st.success("✅ บันทึกข้อมูลเคมีดินเรียบร้อยแล้ว!")
 
 # =============================================================================
 # TAB 3: HARVEST & LAB RESULTS ENTRY (Separated by Treatment Sub-Tabs)
