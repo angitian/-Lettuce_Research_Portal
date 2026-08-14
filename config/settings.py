@@ -29,11 +29,27 @@ CUSTOM_TABLET_CSS = """
     header[data-testid="stHeader"] {
         background: transparent !important;
         pointer-events: none !important;
-        z-index: 1 !important;
+        z-index: 100 !important;
     }
     
     header[data-testid="stHeader"] button, 
-    header[data-testid="stHeader"] a {
+    header[data-testid="stHeader"] a,
+    header[data-testid="stHeader"] [data-testid="stSidebarCollapseButton"],
+    header[data-testid="stHeader"] [data-testid="stSidebarCollapseButton"] button,
+    [data-testid="stSidebarCollapseButton"],
+    [data-testid="stSidebarCollapseButton"] button {
+        pointer-events: auto !important;
+        z-index: 110 !important;
+    }
+
+    /* Ensure sidebar toggle button is always clickable on touch devices */
+    [data-testid="stSidebarCollapseButton"] {
+        pointer-events: auto !important;
+    }
+
+    [data-testid="stSidebarCollapseButton"] button {
+        min-height: 44px !important;
+        min-width: 44px !important;
         pointer-events: auto !important;
     }
 
@@ -195,6 +211,72 @@ CUSTOM_TABLET_CSS = """
         overflow: hidden;
         border: 1px solid #c8e6c9;
         box-shadow: 0 2px 6px rgba(0,0,0,0.04);
+    }
+
+    /* Sidebar touch scroll support (iPad / tablets) */
+    [data-testid="stSidebar"],
+    section[data-testid="stSidebar"] {
+        overflow-y: auto !important;
+        -webkit-overflow-scrolling: touch !important;
+        overscroll-behavior: contain !important;
+    }
+
+    [data-testid="stSidebar"] > div,
+    section[data-testid="stSidebar"] > div {
+        overflow-y: auto !important;
+        -webkit-overflow-scrolling: touch !important;
+    }
+
+    /* iPad Gen 9 Landscape (1024x768) */
+    @media (max-width: 1024px) and (min-width: 769px) {
+        .block-container,
+        [data-testid="stMainBlockContainer"],
+        div[data-testid="stAppViewBlockContainer"] {
+            padding-top: 3rem !important;
+        }
+
+        [data-testid="stSidebar"] {
+            min-width: 280px !important;
+            max-width: 320px !important;
+        }
+
+        .stTabs [data-baseweb="tab"] {
+            padding: 12px 14px !important;
+            font-size: 14px !important;
+        }
+    }
+
+    /* iPad Gen 9 Portrait (768x1024) and smaller tablets */
+    @media (max-width: 768px) {
+        .block-container,
+        [data-testid="stMainBlockContainer"],
+        div[data-testid="stAppViewBlockContainer"] {
+            padding-top: 3.5rem !important;
+            padding-left: 1rem !important;
+            padding-right: 1rem !important;
+        }
+
+        [data-testid="stSidebar"] {
+            min-width: 260px !important;
+            max-width: 80vw !important;
+        }
+
+        .stTabs [data-baseweb="tab-list"] {
+            gap: 4px !important;
+            overflow-x: auto !important;
+            -webkit-overflow-scrolling: touch !important;
+        }
+
+        .stTabs [data-baseweb="tab"] {
+            padding: 10px 10px !important;
+            font-size: 13px !important;
+        }
+
+        .stButton > button, .stDownloadButton > button {
+            min-height: 48px !important;
+            font-size: 14px !important;
+            padding: 10px 14px !important;
+        }
     }
 </style>
 """
