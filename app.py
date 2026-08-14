@@ -189,7 +189,17 @@ with tab_dash:
     kpi1, kpi2, kpi3, kpi4 = st.columns(4)
     
     total_records = len(df_exp.dropna(subset=["canopy_width"], how="all")) if not df_exp.empty else 0
-    total_plants = df_exp["plant_id"].nunique() * df_exp["treatment"].nunique() if not df_exp.empty else len(PLANT_IDS) * len(TREATMENTS)
+    measurement_cols = [
+        "canopy_width", "canopy_length", "canopy_height", "leaf_count", "hue_angle",
+        "fresh_weight", "root_length", "core_length", "head_diameter", "head_firmness",
+        "sample_weight_g", "OD663", "OD645", "OD470", "OD765"
+    ]
+    valid_measurement_cols = [c for c in measurement_cols if c in df_exp.columns]
+    if not df_exp.empty and valid_measurement_cols:
+        measured_df = df_exp.dropna(subset=valid_measurement_cols, how="all")
+        total_plants = measured_df["plant_id"].nunique() if not measured_df.empty else 0
+    else:
+        total_plants = 0
     
     # Calculate LED boost vs Control
     valid_cw = df_exp.dropna(subset=["canopy_width"]) if not df_exp.empty else pd.DataFrame()
