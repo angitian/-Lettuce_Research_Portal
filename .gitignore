@@ -35,3 +35,8 @@ venv.bak/
 .DS_Store
 Thumbs.db
 ~$*.xlsx
+
+# Raw data files (root-level exports/inputs)
+/*.xlsx
+/*.xls
+/*.csv

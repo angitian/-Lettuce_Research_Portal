@@ -24,42 +24,53 @@ PLOTLY_HOVERLABEL_THEME = dict(
 )
 
 def plot_treatment_bar_chart(
-    df: pd.DataFrame, 
-    metric_key: str, 
+    df: pd.DataFrame,
+    metric_key: str,
     metric_label: str,
-    week_no: Optional[int] = None
+    week_no: Optional[int] = None,
+    group_col: str = "treatment",
+    group_label: Optional[str] = None,
 ) -> go.Figure:
-    """Generate Bar Chart comparing 5 treatments with Standard Deviation error bars & Thai Tooltips."""
+    """Generate Bar Chart comparing groups with Standard Deviation error bars & Thai Tooltips.
+
+    When `group_col == "treatment"` (default) the canonical COLOR_PALETTE is
+    used so the 5 raw treatments keep their brand colours. For any other
+    comparison grouping (e.g. Control/LED, Green Moon/Fame) Plotly's default
+    colour cycle is used to avoid colour mismatches.
+    """
     sub_df = df.copy()
     if week_no is not None and "week_no" in sub_df.columns:
         sub_df = sub_df[sub_df["week_no"] == week_no]
-        
-    if sub_df.empty or metric_key not in sub_df.columns:
+
+    if sub_df.empty or metric_key not in sub_df.columns or group_col not in sub_df.columns:
         fig = go.Figure()
         fig.add_annotation(text="ไม่พบข้อมูลสำหรับการสร้างกราฟแท่งเปรียบเทียบ", showarrow=False, font=dict(size=16))
         return fig
-        
-    stats_df = sub_df.groupby("treatment")[metric_key].agg(["mean", "std", "count"]).reset_index()
+
+    stats_df = sub_df.groupby(group_col)[metric_key].agg(["mean", "std", "count"]).reset_index()
     stats_df["std"] = stats_df["std"].fillna(0)
-    
+
     title_suffix = f" (สัปดาห์ที่ {week_no})" if week_no else ""
+    x_label = group_label or group_col
+    color_discrete_map = COLOR_PALETTE if group_col == "treatment" else None
+
     fig = px.bar(
         stats_df,
-        x="treatment",
+        x=group_col,
         y="mean",
         error_y="std",
-        color="treatment",
-        color_discrete_map=COLOR_PALETTE,
+        color=group_col,
+        color_discrete_map=color_discrete_map,
         title=f"การเปรียบเทียบกลุ่มการทดลอง: {metric_label}{title_suffix}",
-        labels={"treatment": "กลุ่มการทดลอง (Treatment)", "mean": metric_label, "std": "ค่าเบี่ยงเบนมาตรฐาน (SD)"},
+        labels={group_col: x_label, "mean": metric_label, "std": "ค่าเบี่ยงเบนมาตรฐาน (SD)"},
         text_auto=".2f"
     )
-    
+
     # Custom Thai Hover Tooltip
     fig.update_traces(
         hovertemplate="<b>กลุ่มการทดลอง</b>: %{x}<br><b>ค่าเฉลี่ย (Mean)</b>: %{y:.2f}<br><b>ส่วนเบี่ยงเบนมาตรฐาน (SD)</b>: ±%{error_y.array:.2f}<extra></extra>"
     )
-    
+
     fig.update_layout(
         template="plotly_white",
         font=dict(family="Inter, Thonburi, sans-serif", size=14),
@@ -71,39 +82,44 @@ def plot_treatment_bar_chart(
     return fig
 
 def plot_plant_boxplot(
-    df: pd.DataFrame, 
-    metric_key: str, 
+    df: pd.DataFrame,
+    metric_key: str,
     metric_label: str,
-    week_no: Optional[int] = None
+    week_no: Optional[int] = None,
+    group_col: str = "treatment",
+    group_label: Optional[str] = None,
 ) -> go.Figure:
     """Generate Boxplot showing plant-level distribution with jittered individual data points & Thai Tooltips."""
     sub_df = df.copy()
     if week_no is not None and "week_no" in sub_df.columns:
         sub_df = sub_df[sub_df["week_no"] == week_no]
-        
-    if sub_df.empty or metric_key not in sub_df.columns:
+
+    if sub_df.empty or metric_key not in sub_df.columns or group_col not in sub_df.columns:
         fig = go.Figure()
         fig.add_annotation(text="ไม่พบข้อมูลสำหรับการสร้างกราฟ Boxplot", showarrow=False, font=dict(size=16))
         return fig
-        
+
     title_suffix = f" (สัปดาห์ที่ {week_no})" if week_no else ""
+    x_label = group_label or group_col
+    color_discrete_map = COLOR_PALETTE if group_col == "treatment" else None
+
     fig = px.box(
         sub_df,
-        x="treatment",
+        x=group_col,
         y=metric_key,
-        color="treatment",
+        color=group_col,
         points="all",
         hover_data=["plant_id"] if "plant_id" in sub_df.columns else None,
-        color_discrete_map=COLOR_PALETTE,
+        color_discrete_map=color_discrete_map,
         title=f"การกระจายตัวระดับต้นพืช (Plant Distribution): {metric_label}{title_suffix}",
-        labels={"treatment": "กลุ่มการทดลอง (Treatment)", metric_key: metric_label}
+        labels={group_col: x_label, metric_key: metric_label}
     )
-    
+
     # Custom Thai Hover Tooltip
     fig.update_traces(
         hovertemplate="<b>กลุ่มการทดลอง</b>: %{x}<br><b>รหัสต้นพืช (Plant ID)</b>: %{customdata[0]}<br><b>ค่าวัด</b>: %{y:.2f}<extra></extra>"
     )
-    
+
     fig.update_layout(
         template="plotly_white",
         font=dict(family="Inter, Thonburi, sans-serif", size=14),

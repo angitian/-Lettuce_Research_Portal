@@ -53,6 +53,18 @@ CUSTOM_TABLET_CSS = """
         pointer-events: auto !important;
     }
 
+    /* Let clicks pass through the empty area of the app toolbar so the
+       transparent header overlay does not intercept tab-bar / top-of-page
+       clicks. Toolbar buttons (deploy, main menu) stay interactive. */
+    [data-testid="stToolbar"] {
+        pointer-events: none !important;
+    }
+
+    [data-testid="stToolbar"] button,
+    [data-testid="stToolbar"] a {
+        pointer-events: auto !important;
+    }
+
     /* Move main content and tab menu all the way to the top margin */
     .block-container, 
     [data-testid="stMainBlockContainer"],
@@ -165,14 +177,16 @@ CUSTOM_TABLET_CSS = """
         background-color: transparent !important;
     }
 
-    /* Fix Tooltip Popup Box & Thai Font Vertical Squishing */
-    div[data-baseweb="popover"],
+    /* Fix Tooltip Popup Box & Thai Font Vertical Squishing
+       NOTE: Select only data-baseweb="tooltip" / role="tooltip" — NOT
+       data-baseweb="popover", which Streamlit 1.58+ uses to wrap the
+       st.selectbox dropdown. Targeting popover here collapses the dropdown
+       to height 0 (height:auto + min-height:min-content + overflow:auto). */
     div[data-baseweb="tooltip"],
     div[role="tooltip"] {
         z-index: 999999 !important;
     }
 
-    div[data-baseweb="popover"] > div,
     div[data-baseweb="tooltip"] > div,
     div[role="tooltip"] {
         background-color: #0f172a !important;
@@ -188,8 +202,7 @@ CUSTOM_TABLET_CSS = """
         word-break: break-word !important;
         overflow: visible !important;
     }
-    
-    div[data-baseweb="popover"] *,
+
     div[data-baseweb="tooltip"] *,
     div[role="tooltip"] * {
         color: #f8fafc !important;

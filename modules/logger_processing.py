@@ -141,7 +141,11 @@ def parse_temp_excel_or_csv(file_input, file_name="", downsample_hourly=True):
     df = df.dropna(subset=['datetime'])
     
     for tc in temp_cols:
-        df[tc] = pd.to_numeric(df[tc].astype(str).str.replace('----', '').str.replace('-', ''), errors='coerce')
+        # Replace only missing-data markers (strings consisting solely of hyphens
+        # such as '----' or '-') with empty string. Do NOT strip a leading minus
+        # sign that denotes a legitimate negative numeric value (e.g. '-1.5').
+        cleaned = df[tc].astype(str).str.replace(r'^-+$', '', regex=True)
+        df[tc] = pd.to_numeric(cleaned, errors='coerce')
         
     df = df.sort_values('datetime').drop_duplicates(subset=['datetime']).reset_index(drop=True)
     
@@ -203,15 +207,36 @@ def compute_daily_dli(df_ppfd, channel_mapping=None):
     df_copy = df_ppfd.copy()
     df_copy['datetime'] = pd.to_datetime(df_copy['datetime'])
     df_copy = df_copy.set_index('datetime')
-    
+
     # Resample to hourly means
     hourly = df_copy[par_cols].resample('1h').mean().reset_index()
+    hourly['datetime'] = pd.to_datetime(hourly['datetime'])
     hourly['date'] = hourly['datetime'].dt.date
-    
+
+    # Reindex to a full 24-hour grid per observed day so missing hours
+    # (e.g. logger stopped mid-day, or night hours with no logged rows)
+    # are treated as 0 PPFD instead of being silently dropped, which would
+    # otherwise underestimate the Daily Light Integral.
+    full_rows = []
+    for date_val, group in hourly.groupby('date'):
+        day_start = pd.Timestamp(date_val) + pd.Timedelta(hours=0)
+        full_hours = pd.date_range(start=day_start, periods=24, freq='1h')
+        g_indexed = group.set_index('datetime')
+        g_reindexed = g_indexed.reindex(full_hours)
+        g_reindexed['date'] = date_val
+        g_reindexed = g_reindexed.reset_index().rename(columns={'index': 'datetime'})
+        full_rows.append(g_reindexed)
+    if full_rows:
+        hourly = pd.concat(full_rows, ignore_index=True)
+        # Fill missing PPFD with 0 (no light). Keep date column intact.
+        for col in par_cols:
+            if col in hourly.columns:
+                hourly[col] = hourly[col].fillna(0.0)
+
     # Calculate DLI per day: sum(hourly_mean * 3600) / 1,000,000
     dli_records = []
     grouped = hourly.groupby('date')
-    
+
     for date_val, group in grouped:
         d_str = pd.to_datetime(date_val).strftime('%d/%m/%Y')
         row_dict = {'Date': d_str}
@@ -224,7 +249,7 @@ def compute_daily_dli(df_ppfd, channel_mapping=None):
                 dli_val = np.nan
             row_dict[channel_name] = dli_val
         dli_records.append(row_dict)
-        
+
     dli_df = pd.DataFrame(dli_records)
     return dli_df
 
