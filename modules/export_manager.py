@@ -105,8 +105,9 @@ def generate_multisheet_excel(df: pd.DataFrame, env_df: pd.DataFrame) -> bytes:
                 row = {"Week": w, "Treatment": trt, "Sample Count": len(group)}
                 for col in weekly_cols:
                     label = WEEKLY_METRICS[col]
-                    mean_val = group[col].mean()
-                    std_val = group[col].std()
+                    numeric_series = pd.to_numeric(group[col], errors="coerce")
+                    mean_val = numeric_series.mean()
+                    std_val = numeric_series.std()
                     row[f"{label} (Mean)"] = round(mean_val, 2) if not pd.isna(mean_val) else ""
                     row[f"{label} (SD)"] = round(std_val, 2) if not pd.isna(std_val) else ""
                 summary_rows.append(row)
