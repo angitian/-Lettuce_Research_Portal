@@ -86,6 +86,7 @@ def build_comparison_groups(
     """
     if mode == "all":
         return {
+            "mode": mode,
             "treatments": list(TREATMENTS),
             "group_map": {t: t for t in TREATMENTS},
             "group_col": "treatment",
@@ -125,6 +126,7 @@ def build_comparison_groups(
             test_kind = "t_test"
 
         return {
+            "mode": mode,
             "treatments": treatments,
             "group_map": group_map,
             "group_col": "comparison_group",
@@ -143,6 +145,7 @@ def build_comparison_groups(
             treatments = list(TREATMENTS)
             group_map = {t: t for t in TREATMENTS}
             return {
+                "mode": mode,
                 "treatments": treatments,
                 "group_map": group_map,
                 "group_col": "treatment",
@@ -179,6 +182,7 @@ def build_comparison_groups(
             test_kind = "t_test"
 
         return {
+            "mode": mode,
             "treatments": treatments,
             "group_map": group_map,
             "group_col": "comparison_group",

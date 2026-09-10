@@ -10,11 +10,11 @@ APP_SUBTITLE = "Influence of LED Supplemental Lighting & Soil Chemical Propertie
 START_DATE = datetime.date(2026, 8, 4)
 
 COLOR_PALETTE = {
-    "Control_GM": "#2ecc71",   # Emerald Green
-    "LED_GM": "#27ae60",       # Dark Emerald
-    "Control_F": "#3498db",    # Blue
-    "LED_F (1)": "#9b59b6",   # Purple
-    "LED_F (2)": "#8e44ad"    # Dark Purple
+    "Control_GM": "#81c784",   # Green Moon — Control (เขียวอ่อน)
+    "LED_GM":     "#1b5e20",   # Green Moon — LED (เขียวเข้ม)
+    "Control_F":  "#90caf9",   # Fame — Control (ฟ้าอ่อน)
+    "LED_F (1)":  "#1976d2",   # Fame — LED Plot 1 (ฟ้ากลาง)
+    "LED_F (2)":  "#0d47a1"    # Fame — LED Plot 2 (ฟ้าเข้ม)
 }
 
 CUSTOM_TABLET_CSS = """

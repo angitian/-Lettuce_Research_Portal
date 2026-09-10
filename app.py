@@ -72,7 +72,8 @@ import modules.visualizations as visualizations
 importlib.reload(visualizations)
 from modules.visualizations import (
     plot_treatment_bar_chart, plot_plant_boxplot,
-    plot_growth_trajectory, plot_correlation_heatmap
+    plot_growth_trajectory, plot_correlation_heatmap,
+    get_chart_color_map, build_group_color_map,
 )
 
 import modules.export_manager as export_manager
@@ -82,6 +83,54 @@ from modules.export_manager import (
     generate_statistical_export_package, generate_comparison_json,
     LLM_ANALYSIS_PROMPT
 )
+
+# -----------------------------------------------------------------------------
+# Chart color helper — merges the canonical COLOR_PALETTE with any user
+# customisations stored in session_state["chart_color_overrides"]. Used by
+# every chart in the app (Dashboard, Analytics, PPFD, DLI) so a single
+# color-picker edit in the Analytics tab propagates everywhere.
+# -----------------------------------------------------------------------------
+def _active_color_map():
+    """Return the active treatment -> color map (defaults + user overrides)."""
+    overrides = st.session_state.get("chart_color_overrides")
+    return get_chart_color_map(overrides)
+
+
+def _comparison_group_order(comp_spec, df):
+    """Return the canonical ordering of comparison groups for charts.
+
+    For raw-treatment modes (group_col == "treatment") the canonical
+    TREATMENTS order is used so treatments of the same variety sit next
+    to each other. For logical-group modes (within / cross) groups are
+    ordered by the position of their first raw treatment in
+    ``comp_spec["treatments"]`` (Control before LED, Green Moon before
+    Fame, Plot 1 before Plot 2), keeping the same variety adjacent.
+    Returns ``None`` when no ordering can be derived (caller then falls
+    back to the chart function's internal default).
+    """
+    group_col = comp_spec.get("group_col", "treatment")
+    group_map = comp_spec.get("group_map", {})
+    treatments = comp_spec.get("treatments", [])
+
+    if group_col == "treatment":
+        # Let the chart function apply the canonical TREATMENTS order.
+        return None
+
+    if group_col not in df.columns:
+        return None
+    present_groups = set(df[group_col].dropna().unique().tolist())
+    if not present_groups:
+        return None
+
+    ordered = []
+    for treatment in treatments:
+        group_label = group_map.get(treatment)
+        if group_label and group_label in present_groups and group_label not in ordered:
+            ordered.append(group_label)
+    # Append any unexpected groups (sorted) so nothing is dropped.
+    ordered += sorted(present_groups - set(ordered))
+    return ordered or None
+
 
 # -----------------------------------------------------------------------------
 # 1. Page Configuration & Custom CSS (Tablet & Touch-Friendly Theme)
@@ -288,12 +337,12 @@ with tab_dash:
     
     with d_col1:
         st.markdown("#### 📈 Canopy Width Trajectory Across Weeks")
-        fig_dash_line = plot_growth_trajectory(df_exp, "canopy_width", "Canopy Width (cm)")
+        fig_dash_line = plot_growth_trajectory(df_exp, "canopy_width", "Canopy Width (cm)", color_map=_active_color_map())
         st.plotly_chart(fig_dash_line, use_container_width=True, key="dash_growth_line_chart")
         
     with d_col2:
         st.markdown("#### 🧪 Phytochemical Accumulation Comparison")
-        fig_dash_bar = plot_treatment_bar_chart(df_exp, "total_chl", "Total Chlorophyll (mg/g FW)")
+        fig_dash_bar = plot_treatment_bar_chart(df_exp, "total_chl", "Total Chlorophyll (mg/g FW)", color_map=_active_color_map())
         st.plotly_chart(fig_dash_bar, use_container_width=True, key="dash_phytochem_bar_chart")
         
     st.markdown("---")
@@ -647,12 +696,13 @@ with tab2:
                     # Build a dynamic color map keyed by the user-facing channel
                     # labels so the palette still applies after rename. Falls back
                     # to Plotly defaults for unmapped labels.
-                    treatment_list = list(COLOR_PALETTE.keys())
+                    active_palette = _active_color_map()
+                    treatment_list = list(active_palette.keys())
                     dynamic_ppfd_colors = {}
                     for idx, col in enumerate(par_val_cols):
                         user_label = rename_dict.get(col, col)
                         if idx < len(treatment_list):
-                            dynamic_ppfd_colors[user_label] = COLOR_PALETTE[treatment_list[idx]]
+                            dynamic_ppfd_colors[user_label] = active_palette[treatment_list[idx]]
 
                     fig_ppfd = px.line(
                         hourly_p_mapped,
@@ -725,11 +775,12 @@ with tab2:
                 # compute_daily_dli). Map each label back to a palette color
                 # by position so the chart stays consistent with the rest of
                 # the app.
-                treatment_list = list(COLOR_PALETTE.keys())
+                active_palette = _active_color_map()
+                treatment_list = list(active_palette.keys())
                 dynamic_dli_colors = {}
                 for idx, col in enumerate(dli_cols):
                     if idx < len(treatment_list):
-                        dynamic_dli_colors[col] = COLOR_PALETTE[treatment_list[idx]]
+                        dynamic_dli_colors[col] = active_palette[treatment_list[idx]]
 
                 fig_dli = px.bar(
                     dli_df,
@@ -1006,7 +1057,37 @@ with tab4:
 
         st.markdown("---")
 
-        # ----- 🎯 โหมดการเปรียบเทียบ (Comparison Mode) -----
+        # ----- � ปรับสีกราฟ (Chart Color Customization) -----
+        # ผู้ใช้ปรับสีแต่ละแปลงได้อิสระ — ค่าเริ่มต้นเป็นโทนตามพันธุ์ (Green Moon=เขียว, Fame=ฟ้า)
+        # ไล่เฉดเข้ม-จาก การปรับที่นี่มีผลกับทุกกราฟในแอป (Dashboard, Analytics, PPFD, DLI)
+        with st.expander("🎨 ปรับสีกราฟ (Chart Color Customization)", expanded=False):
+            st.caption("ปรับสีของแต่ละแปลงทดลองได้อิสระ — ค่าเริ่มต้นเป็นโทนสีเดียวกันต่อพันธุ์ (Green Moon = เขียว, Fame = ฟ้า) ไล่เฉดเข้ม-จาง การเปลี่ยนที่นี่มีผลกับกราฟทุกแท็บทันที")
+            active_palette = _active_color_map()
+            color_cols = st.columns(len(TREATMENTS))
+            new_overrides = {}
+            for idx, treatment in enumerate(TREATMENTS):
+                with color_cols[idx]:
+                    default_color = active_palette.get(treatment, "#888888")
+                    picked = st.color_picker(
+                        treatment,
+                        value=default_color,
+                        key=f"chart_color_{treatment}",
+                        help=f"สีของแปลง {treatment} ในทุกกราฟ",
+                    )
+                    new_overrides[treatment] = picked
+            st.session_state["chart_color_overrides"] = new_overrides
+
+            btn_col1, btn_col2 = st.columns([1, 3])
+            with btn_col1:
+                if st.button("🔄 คืนค่าสีเริ่มต้น", key="reset_chart_colors_btn", help="คืนค่าสีทั้งหมดกลับเป็นค่าเริ่มต้นตามโทนพันธุ์"):
+                    st.session_state.pop("chart_color_overrides", None)
+                    st.rerun()
+            with btn_col2:
+                st.caption("💡 ค่าเริ่มต้น: Green Moon = เขียว (อ่อน→เข้ม), Fame = ฟ้า (อ่อน→กลาง→เข้ม)")
+
+        st.markdown("---")
+
+        # ----- �🎯 โหมดการเปรียบเทียบ (Comparison Mode) -----
         # ให้ผู้ใช้เลือกขอบเขตการเปรียบเทียบเอง: ทั้งหมด / ภายในพันธุ์ / ข้ามพันธุ์
         # ระบบจะเลือกวิธีสถิติที่เหมาะสมอัตโนมัติ (t-test / one-way ANOVA / two-way ANOVA)
         st.markdown("### 🎯 โหมดการเปรียบเทียบ (Comparison Mode)")
@@ -1272,6 +1353,14 @@ with tab4:
 
                         # 3. Interactive Charts — แกน x ตาม group_col ของโหมด
                         st.markdown("**📈 Visualizations**")
+                        # Build the color map for the active comparison mode.
+                        # For raw-treatment modes (all / cross-All) this is the
+                        # full treatment palette; for logical-group modes each
+                        # group inherits the color of its first raw treatment.
+                        group_color_map = build_group_color_map(comp_spec, _active_color_map())
+                        # Canonical group ordering so treatments of the same
+                        # variety / lighting condition sit next to each other.
+                        group_order = _comparison_group_order(comp_spec, analysis_df)
                         chart_col1, chart_col2 = st.columns(2)
                         with chart_col1:
                             fig_bar = plot_treatment_bar_chart(
@@ -1281,6 +1370,8 @@ with tab4:
                                 week_no=selected_analysis_week if selected_analysis_week != "All Weeks" else None,
                                 group_col=group_col,
                                 group_label=group_label,
+                                color_map=group_color_map,
+                                category_order=group_order,
                             )
                             st.plotly_chart(fig_bar, use_container_width=True, key=f"analytics_bar_{metric_key}")
 
@@ -1292,11 +1383,13 @@ with tab4:
                                 week_no=selected_analysis_week if selected_analysis_week != "All Weeks" else None,
                                 group_col=group_col,
                                 group_label=group_label,
+                                color_map=group_color_map,
+                                category_order=group_order,
                             )
                             st.plotly_chart(fig_box, use_container_width=True, key=f"analytics_box_{metric_key}")
 
                         # Growth trajectory — กรองเฉพาะแปลงในโหมด แต่ยังใช้ treatment เป็น legend
-                        fig_line = plot_growth_trajectory(analysis_df, metric_key, selected_metric_label)
+                        fig_line = plot_growth_trajectory(analysis_df, metric_key, selected_metric_label, color_map=_active_color_map())
                         st.plotly_chart(fig_line, use_container_width=True, key=f"analytics_line_{metric_key}")
             
             # 4. Pearson Correlation — ผู้ใช้เลือกตัวแปรเองได้
