@@ -1,0 +1,46 @@
+treatment,plant_id,replicate,week_no,record_date,variety,lighting,weight_g,chl_a_mgL,chl_b_mgL,total_chl_mgL,carotenoid_mgL
+Control_GM,A5,R1,3,2026-08-17,Green Moon,Control,0.4593,80.4165,32.5574,114.1951,6.4153
+Control_GM,A5,R2,3,2026-08-17,Green Moon,Control,0.4459,66.6392,25.5089,93.1581,7.839
+Control_GM,A5,R3,3,2026-08-17,Green Moon,Control,0.4412,37.2507,10.5304,48.3409,3.7793
+Control_GM,B3,R1,3,2026-08-17,Green Moon,Control,0.4404,19.0727,20.5114,39.8901,5.1311
+Control_GM,B3,R2,3,2026-08-17,Green Moon,Control,0.4059,16.2732,11.5536,28.0803,5.387
+Control_GM,B3,R3,3,2026-08-17,Green Moon,Control,0.4424,21.5771,10.0344,31.9408,3.6997
+Control_GM,C4,R1,3,2026-08-17,Green Moon,Control,0.4197,42.2132,14.5909,57.442,3.976
+Control_GM,C4,R2,3,2026-08-17,Green Moon,Control,0.4127,34.0414,12.9402,47.4975,3.6889
+Control_GM,C4,R3,3,2026-08-17,Green Moon,Control,0.4337,35.2868,16.249,52.0742,3.1708
+Control_GM,C6,R1,3,2026-08-17,Green Moon,Control,0.4557,76.3044,27.9122,105.3715,4.7601
+Control_GM,C6,R2,3,2026-08-17,Green Moon,Control,0.4283,64.3192,31.046,96.3484,2.6271
+Control_GM,C6,R3,3,2026-08-17,Green Moon,Control,0.4177,68.2085,29.9229,99.1702,5.18
+Control_GM,C9,R1,3,2026-08-17,Green Moon,Control,0.4009,97.9112,42.1801,141.5814,3.7436
+Control_GM,C9,R2,3,2026-08-17,Green Moon,Control,0.4124,126.7258,45.3725,174.015,5.0989
+Control_GM,C9,R3,3,2026-08-17,Green Moon,Control,0.41,82.951,31.7346,115.9429,2.6271
+LED_F (2),A2,R1,1,2026-08-04,Fame,LED Plot 2,,,,,
+LED_F (2),A2,R2,1,2026-08-04,Fame,LED Plot 2,,,,,
+LED_F (2),A2,R3,1,2026-08-04,Fame,LED Plot 2,,,,,
+LED_F (2),A5,R1,1,2026-08-04,Fame,LED Plot 2,,,,,
+LED_F (2),A5,R2,1,2026-08-04,Fame,LED Plot 2,,,,,
+LED_F (2),A5,R3,1,2026-08-04,Fame,LED Plot 2,,,,,
+LED_F (2),A7,R1,1,2026-08-04,Fame,LED Plot 2,,,,,
+LED_F (2),A7,R2,1,2026-08-04,Fame,LED Plot 2,,,,,
+LED_F (2),A7,R3,1,2026-08-04,Fame,LED Plot 2,,,,,
+LED_F (2),B3,R1,1,2026-08-04,Fame,LED Plot 2,,,,,
+LED_F (2),B3,R2,1,2026-08-04,Fame,LED Plot 2,,,,,
+LED_F (2),B3,R3,1,2026-08-04,Fame,LED Plot 2,,,,,
+LED_F (2),B5,R1,1,2026-08-04,Fame,LED Plot 2,,,,,
+LED_F (2),B5,R2,1,2026-08-04,Fame,LED Plot 2,,,,,
+LED_F (2),B5,R3,1,2026-08-04,Fame,LED Plot 2,,,,,
+LED_F (2),B6,R1,1,2026-08-04,Fame,LED Plot 2,,,,,
+LED_F (2),B6,R2,1,2026-08-04,Fame,LED Plot 2,,,,,
+LED_F (2),B6,R3,1,2026-08-04,Fame,LED Plot 2,,,,,
+LED_F (2),B8,R1,1,2026-08-04,Fame,LED Plot 2,,,,,
+LED_F (2),B8,R2,1,2026-08-04,Fame,LED Plot 2,,,,,
+LED_F (2),B8,R3,1,2026-08-04,Fame,LED Plot 2,,,,,
+LED_F (2),C4,R1,1,2026-08-04,Fame,LED Plot 2,,,,,
+LED_F (2),C4,R2,1,2026-08-04,Fame,LED Plot 2,,,,,
+LED_F (2),C4,R3,1,2026-08-04,Fame,LED Plot 2,,,,,
+LED_F (2),C6,R1,1,2026-08-04,Fame,LED Plot 2,,,,,
+LED_F (2),C6,R2,1,2026-08-04,Fame,LED Plot 2,,,,,
+LED_F (2),C6,R3,1,2026-08-04,Fame,LED Plot 2,,,,,
+LED_F (2),C9,R1,1,2026-08-04,Fame,LED Plot 2,,,,,
+LED_F (2),C9,R2,1,2026-08-04,Fame,LED Plot 2,,,,,
+LED_F (2),C9,R3,1,2026-08-04,Fame,LED Plot 2,,,,,

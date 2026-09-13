@@ -52,6 +52,16 @@ generate_env_template = getattr(storage, "generate_env_template")
 save_experiment_data_to_disk = getattr(storage, "save_experiment_data_to_disk")
 save_env_data_to_disk = getattr(storage, "save_env_data_to_disk")
 clear_disk_storage = getattr(storage, "clear_disk_storage")
+# Pigment concentration (mg/L) helpers
+parse_concentration_excel = getattr(storage, "parse_concentration_excel")
+read_concentration_excel = getattr(storage, "read_concentration_excel")
+parse_concentration_rows = getattr(storage, "parse_concentration_rows")
+merge_concentration_data = getattr(storage, "merge_concentration_data")
+apply_concentration_means_to_experiment = getattr(storage, "apply_concentration_means_to_experiment")
+save_concentration_data_to_disk = getattr(storage, "save_concentration_data_to_disk")
+generate_empty_concentration_data = getattr(storage, "generate_empty_concentration_data")
+delete_treatment_week_data = getattr(storage, "delete_treatment_week_data")
+clear_tab3_section_data = getattr(storage, "clear_tab3_section_data")
 
 import modules.logger_processing as logger_processing
 importlib.reload(logger_processing)
@@ -153,6 +163,100 @@ initialize_session_state()
 if "selected_date" not in st.session_state:
     st.session_state.selected_date = START_DATE
 
+
+# -----------------------------------------------------------------------------
+# Concentration import dialog: shows all rows, user selects (checkbox + shift),
+# assigns treatment + date, then imports selected rows only.
+# -----------------------------------------------------------------------------
+@st.dialog("🧪 นำเข้า Pigment Concentration (mg/L)", width="large")
+def _open_concentration_import_dialog(filename, default_date):
+    raw_df = st.session_state.conc_pending.get(filename)
+    if raw_df is None or raw_df.empty:
+        st.warning("ไม่มีข้อมูลในไฟล์นี้")
+        if st.button("ปิด", key=f"conc_close_empty_{filename}"):
+            st.session_state.conc_imported.add(filename)
+            st.rerun()
+        return
+
+    st.caption(
+        f"📄 **{filename}** — {len(raw_df)} แถว | "
+        "เลือกแถวที่จะนำเข้า: คลิก checkbox แถวแรก → **Shift + คลิก checkbox แถวสุดท้าย** "
+        "เพื่อเลือกทั้งช่วง แล้วกำหนดเงื่อนไขด้านล่าง"
+    )
+
+    # Multi-row selection dataframe (native checkbox + shift-range in 1.58)
+    event = st.dataframe(
+        raw_df,
+        on_select="rerun",
+        selection_mode="multi-row",
+        key=f"conc_sel_{filename}",
+        use_container_width=True,
+        hide_index=True,
+    )
+    selected_rows = list(event.selection.rows) if event.selection.rows else []
+
+    st.markdown("---")
+    st.markdown(f"**เลือกแล้ว: {len(selected_rows)} / {len(raw_df)} แถว**")
+
+    cc1, cc2 = st.columns(2)
+    with cc1:
+        # Default treatment: try to derive from filename
+        default_trt = getattr(
+            storage, "_extract_treatment_from_concentration_filename"
+        )(filename)
+        default_idx = (
+            TREATMENTS.index(default_trt) if default_trt in TREATMENTS else 0
+        )
+        treatment = st.selectbox(
+            "แปลงทดลอง (Treatment)",
+            options=TREATMENTS,
+            index=default_idx,
+            key=f"conc_trt_{filename}",
+            help="กำหนดแปลงทดลองให้ทุกแถวที่เลือก",
+        )
+    with cc2:
+        record_date = st.date_input(
+            "วันที่เก็บตัวอย่าง",
+            value=default_date,
+            key=f"conc_date_{filename}",
+            help="วันที่เก็บตัวอย่าง — week จะคำนวณอัตโนมัติ",
+        )
+
+    bc1, bc2 = st.columns(2)
+    with bc1:
+        if st.button(
+            f"นำเข้า {len(selected_rows)} แถวที่เลือก",
+            key=f"conc_import_{filename}",
+            type="primary",
+            disabled=(len(selected_rows) == 0),
+        ):
+            selected_raw = raw_df.iloc[selected_rows]
+            new_conc_df, msg = parse_concentration_rows(
+                selected_raw, treatment, date=record_date
+            )
+            if not new_conc_df.empty:
+                st.session_state.concentration_data = merge_concentration_data(
+                    st.session_state.concentration_data, new_conc_df
+                )
+                st.session_state.experiment_data = apply_concentration_means_to_experiment(
+                    st.session_state.experiment_data, st.session_state.concentration_data
+                )
+                save_concentration_data_to_disk(st.session_state.concentration_data)
+                save_experiment_data_to_disk(st.session_state.experiment_data)
+                st.session_state.conc_imported.add(filename)
+                # Remove from pending so the dialog doesn't reopen
+                st.session_state.conc_pending.pop(filename, None)
+                st.success(f"🧪 {msg}")
+                st.rerun()
+            else:
+                st.error(msg)
+    with bc2:
+        if st.button("ข้ามไฟล์นี้", key=f"conc_skip_{filename}"):
+            st.session_state.conc_imported.add(filename)
+            st.session_state.conc_pending.pop(filename, None)
+            st.rerun()
+
+
 # -----------------------------------------------------------------------------
 # 3. Sidebar: File Operations & Data Management
 # -----------------------------------------------------------------------------
@@ -166,13 +270,65 @@ with st.sidebar:
         "Upload XLSX / CSV Data (รองรับหลายไฟล์พร้อมกัน + สะสมข้อมูล)",
         type=["xlsx", "xls", "csv"],
         accept_multiple_files=True,
-        help="อัปโหลดไฟล์ Excel (.xlsx) ที่มีโครงสร้าง 5 Sheet (Control_GM, LED_GM, Control_F, LED_F1, LED_F2) หรือไฟล์ CSV ข้อมูลงานวิจัย — ระบบรองรับการอัปโหลดหลายไฟล์พร้อมกันและสะสมข้อมูลแบบไม่ทับกัน (แนะนำตั้งชื่อไฟล์ตามรูปแบบ DD-MM-YYYY.xlsx เช่น 04-08-2026.xlsx)"
+        help="อัปโหลดไฟล์ Excel (.xlsx) ที่มีโครงสร้าง 5 Sheet (Control_GM, LED_GM, Control_F, LED_F1, LED_F2) หรือไฟล์ CSV ข้อมูลงานวิจัย — ระบบรองรับการอัปโหลดหลายไฟล์พร้อมกันและสะสมข้อมูลแบบไม่ทับกัน (แนะนำตั้งชื่อไฟล์ตามรูปแบบ DD-MM-YYYY.xlsx เช่น 04-08-2026.xlsx) | รองรับไฟล์ concentration (mg/L) — ชื่อไฟล์ต้องมีคำว่า 'concentration' (เช่น concentration Control-GM.xlsx) หรือเพิ่มคอลัมน์ Treatment/Date ในไฟล์ ระบบจะถามเงื่อนไขที่ขาดตอนอัปโหลด"
     )
 
     if uploaded_files:
         imported_names = []
+        concentration_imported = False
+
+        # ----- Concentration files: stage raw rows, then import via dialog -----
+        # Concentration files are NOT imported immediately. Instead, their raw
+        # rows are staged in session state and a dialog lets the user select
+        # rows (checkbox + shift-range) and assign treatment + date.
+        conc_files = [
+            f for f in uploaded_files
+            if f.name.lower().endswith((".xlsx", ".xls")) and "concentration" in f.name.lower()
+        ]
+        if conc_files:
+            if "conc_pending" not in st.session_state:
+                st.session_state.conc_pending = {}  # {filename: raw_df}
+            if "conc_imported" not in st.session_state:
+                st.session_state.conc_imported = set()  # filenames already imported
+            for cf in conc_files:
+                if cf.name in st.session_state.conc_imported:
+                    continue  # already imported this run
+                if cf.name not in st.session_state.conc_pending:
+                    raw_df, read_msg = read_concentration_excel(cf.getvalue())
+                    if raw_df.empty:
+                        st.error(f"{cf.name}: {read_msg}")
+                        st.session_state.conc_imported.add(cf.name)
+                        continue
+                    st.session_state.conc_pending[cf.name] = raw_df
+
+        # Default date for the dialog: latest harvest date in experiment_data, else today
+        default_date = datetime.date.today()
+        exp_for_default = st.session_state.experiment_data
+        if not exp_for_default.empty and "record_date" in exp_for_default.columns:
+            latest_dates = exp_for_default["record_date"].dropna()
+            if not latest_dates.empty:
+                try:
+                    parsed = pd.to_datetime(latest_dates, errors="coerce").dropna()
+                    if not parsed.empty:
+                        default_date = parsed.max().date()
+                except Exception:
+                    pass
+
+        # Open the import dialog for the first pending concentration file.
+        pending_names = [
+            n for n in st.session_state.conc_pending.keys()
+            if n not in st.session_state.conc_imported
+        ]
+        if pending_names:
+            _open_concentration_import_dialog(pending_names[0], default_date)
+
         for uploaded_file in uploaded_files:
             if uploaded_file.name.endswith((".xlsx", ".xls")):
+                # Concentration files are handled by the dialog above; skip here.
+                if "concentration" in uploaded_file.name.lower():
+                    if uploaded_file.name in st.session_state.get("conc_imported", set()):
+                        concentration_imported = True
+                    continue
                 new_df, msg = parse_uploaded_excel(uploaded_file.getvalue(), uploaded_file.name)
                 if not new_df.empty:
                     st.session_state.experiment_data = merge_accumulative_experiment_data(
@@ -210,6 +366,13 @@ with st.sidebar:
                 f"📊 รวมข้อมูลเข้ากับข้อมูลเดิมเรียบร้อยแล้ว — ไฟล์ที่นำเข้า: {len(imported_names)} ไฟล์ "
                 f"({', '.join(imported_names)}) | รวมทั้งหมด {total_rows} แถว (สะสม ไม่ทับซ้อน)"
             )
+        if concentration_imported:
+            st.info(
+                f"🧪 ข้อมูล concentration (mg/L) รวมทั้งหมด "
+                f"{len(st.session_state.concentration_data)} แถว replicate "
+                f"({st.session_state.concentration_data['treatment'].nunique()} แปลง) — "
+                f"ค่าเฉลี่ยรายต้นถูกอัปเดตเข้า experiment_data แล้ว"
+            )
                 
     st.markdown("---")
     st.subheader("💾 Export Operations")
@@ -228,7 +391,8 @@ with st.sidebar:
     # Download Full Multi-sheet Excel
     excel_bytes = generate_multisheet_excel(
         st.session_state.experiment_data, 
-        st.session_state.env_data
+        st.session_state.env_data,
+        st.session_state.get("concentration_data"),
     )
     st.download_button(
         label="📊 Download Multi-Sheet Excel Report (.xlsx)",
@@ -253,6 +417,9 @@ with st.sidebar:
                 clear_disk_storage()
                 st.session_state.experiment_data = generate_empty_dataset()
                 st.session_state.env_data = generate_empty_environment_data()
+                st.session_state.concentration_data = generate_empty_concentration_data()
+                st.session_state.conc_pending = {}
+                st.session_state.conc_imported = set()
                 st.session_state.logger_ppfd = pd.DataFrame()
                 st.session_state.logger_temp = pd.DataFrame()
                 st.session_state.ppfd_channel_mapping = {}
@@ -1012,6 +1179,241 @@ with tab3:
         st.session_state.experiment_data[phyto_display_cols].dropna(subset=["chl_a"]),
         use_container_width=True
     )
+
+    # ===================== 3. Pigment Concentration (mg/L) =====================
+    st.markdown("---")
+    st.markdown("#### 🧪 Pigment Concentration (mg/L) — Replicate Entry")
+    st.markdown(
+        "กรอก/แก้ไขข้อมูลความเข้มข้นสารสี **mg/L** ระดับ replicate (R1–R3 ต่อต้น) — "
+        "ระบบคำนวณ **Mean ± SD** รายต้นอัตโนมัติ และส่งค่าเฉลี่ยเข้า experiment_data "
+        "เพื่อใช้ใน Statistical Analytics (ANOVA / Tukey HSD / Correlation) — **Auto-Save เปิดใช้งาน**"
+    )
+
+    conc_df = st.session_state.concentration_data.copy()
+    conc_mgL_cols = ["chl_a_mgL", "chl_b_mgL", "total_chl_mgL", "carotenoid_mgL"]
+
+    conc_sub_tabs = st.tabs(TREATMENTS)
+    for idx_c, trt_name_c in enumerate(TREATMENTS):
+        with conc_sub_tabs[idx_c]:
+            st.markdown(f"##### แปลงทดลอง: **{trt_name_c}**")
+
+            sub_conc = conc_df[conc_df["treatment"] == trt_name_c].copy() if not conc_df.empty else pd.DataFrame()
+
+            # Build a template (10 plants × 3 replicates) when no data exists yet
+            if sub_conc.empty:
+                template_rows = []
+                for pid in PLANT_IDS:
+                    for rep in data_schema.CONCENTRATION_REPLICATES:
+                        template_rows.append({
+                            "treatment": trt_name_c,
+                            "variety": data_schema.VARIETY_MAP.get(trt_name_c, "Green Moon"),
+                            "lighting": data_schema.LIGHTING_MAP.get(trt_name_c, "Control"),
+                            "plant_id": pid,
+                            "replicate": rep,
+                            "weight_g": np.nan,
+                            "chl_a_mgL": np.nan,
+                            "chl_b_mgL": np.nan,
+                            "total_chl_mgL": np.nan,
+                            "carotenoid_mgL": np.nan,
+                        })
+                sub_conc = pd.DataFrame(template_rows)
+
+            # Sort by plant_id then replicate for stable display
+            sub_conc["pid_order"] = pd.Categorical(sub_conc["plant_id"], categories=PLANT_IDS, ordered=True)
+            sub_conc = sub_conc.sort_values(["pid_order", "replicate"]).drop(columns=["pid_order"])
+
+            editor_cols = ["plant_id", "replicate", "weight_g", "chl_a_mgL", "chl_b_mgL", "total_chl_mgL", "carotenoid_mgL"]
+            for c in editor_cols:
+                if c not in sub_conc.columns:
+                    sub_conc[c] = np.nan
+            editor_display = sub_conc[editor_cols].where(pd.notna(sub_conc[editor_cols]), None)
+
+            edited_conc = st.data_editor(
+                editor_display,
+                key=f"editor_conc_{trt_name_c}",
+                column_config={
+                    "plant_id": st.column_config.TextColumn("Plant ID", disabled=True, help="รหัสต้นพืช"),
+                    "replicate": st.column_config.TextColumn("Replicate", help="R1 / R2 / R3"),
+                    "weight_g": st.column_config.NumberColumn("Weight (g)", min_value=0.0, max_value=10.0, step=0.0001, format="%.4f", help="น้ำหนักตัวอย่างจริง (กรัม)"),
+                    "chl_a_mgL": st.column_config.NumberColumn("Chl a (mg/L)", min_value=0.0, step=0.0001, format="%.4f", help=METRIC_TOOLTIPS.get("chl_a_mgL", "")),
+                    "chl_b_mgL": st.column_config.NumberColumn("Chl b (mg/L)", min_value=0.0, step=0.0001, format="%.4f", help=METRIC_TOOLTIPS.get("chl_b_mgL", "")),
+                    "total_chl_mgL": st.column_config.NumberColumn("Total Chl (mg/L)", min_value=0.0, step=0.0001, format="%.4f", help=METRIC_TOOLTIPS.get("total_chl_mgL", "")),
+                    "carotenoid_mgL": st.column_config.NumberColumn("Carotenoid (mg/L)", min_value=0.0, step=0.0001, format="%.4f", help=METRIC_TOOLTIPS.get("carotenoid_mgL", "")),
+                },
+                use_container_width=True,
+                num_rows="dynamic",
+            )
+
+            # Stamp metadata + persist
+            edited_conc["treatment"] = trt_name_c
+            edited_conc["variety"] = data_schema.VARIETY_MAP.get(trt_name_c, "Green Moon")
+            edited_conc["lighting"] = data_schema.LIGHTING_MAP.get(trt_name_c, "Control")
+            # Carry record_date / week_no from existing rows (or default to latest week)
+            if "record_date" in sub_conc.columns and not sub_conc["record_date"].dropna().empty:
+                edited_conc["record_date"] = sub_conc["record_date"].iloc[0]
+            else:
+                edited_conc["record_date"] = st.session_state.get("selected_date", START_DATE)
+            if "week_no" in sub_conc.columns and not sub_conc["week_no"].dropna().empty:
+                edited_conc["week_no"] = sub_conc["week_no"].iloc[0]
+            else:
+                edited_conc["week_no"] = st.session_state.get("current_week", 4)
+
+            # Rebuild concentration_data: drop old rows for this treatment, add edited
+            other_conc = conc_df[conc_df["treatment"] != trt_name_c] if not conc_df.empty else pd.DataFrame()
+            all_cols = ["record_date", "week_no", "treatment", "variety", "lighting",
+                        "plant_id", "replicate", "weight_g",
+                        "chl_a_mgL", "chl_b_mgL", "total_chl_mgL", "carotenoid_mgL"]
+            for c in all_cols:
+                if c not in edited_conc.columns:
+                    edited_conc[c] = np.nan
+            edited_conc = edited_conc[all_cols]
+            new_conc_full = pd.concat([other_conc, edited_conc], ignore_index=True)
+            st.session_state.concentration_data = new_conc_full
+            st.session_state.experiment_data = apply_concentration_means_to_experiment(
+                st.session_state.experiment_data, new_conc_full
+            )
+            save_concentration_data_to_disk(new_conc_full)
+            save_experiment_data_to_disk(st.session_state.experiment_data)
+
+            # Summary table: Mean ± SD per plant + %CV warning
+            sub_for_summary = new_conc_full[new_conc_full["treatment"] == trt_name_c].copy()
+            if not sub_for_summary.empty:
+                summary_rows = []
+                for pid, grp in sub_for_summary.groupby("plant_id"):
+                    n = len(grp)
+                    row = {"Plant ID": pid, "n (rep)": n}
+                    for c in conc_mgL_cols:
+                        mean_v = grp[c].mean()
+                        std_v = grp[c].std() if n > 1 else 0.0
+                        cv = (std_v / mean_v * 100) if mean_v and mean_v > 0 else np.nan
+                        row[data_schema.CONCENTRATION_METRICS[c]] = (
+                            f"{mean_v:.2f} ± {std_v:.2f}" if not pd.isna(mean_v) else "—"
+                        )
+                        row[f"{data_schema.CONCENTRATION_METRICS[c]} %CV"] = (
+                            f"{cv:.1f}%" if not pd.isna(cv) else "—"
+                        )
+                    summary_rows.append(row)
+                summary_tbl = pd.DataFrame(summary_rows)
+
+                st.markdown("###### สรุปค่าเฉลี่ย ± SD รายต้น (จาก replicate)")
+                st.dataframe(summary_tbl, use_container_width=True, hide_index=True)
+
+                # %CV > 20% warning
+                high_cv_plants = []
+                for _, r in summary_tbl.iterrows():
+                    for c in conc_mgL_cols:
+                        cv_col = f"{data_schema.CONCENTRATION_METRICS[c]} %CV"
+                        if cv_col in r:
+                            try:
+                                cv_val = float(str(r[cv_col]).replace("%", ""))
+                                if cv_val > 20:
+                                    high_cv_plants.append(f"{r['Plant ID']} ({data_schema.CONCENTRATION_METRICS[c]}: {cv_val:.1f}%)")
+                            except (ValueError, TypeError):
+                                pass
+                if high_cv_plants:
+                    st.warning(
+                        f"⚠️ %CV > 20% ในต้น: {', '.join(high_cv_plants)} — "
+                        f"ควรตรวจสอบความแปรปรวนของ replicate (n=3 อาจมี CV สูงตามธรรมชาติ)"
+                    )
+
+            # ===================== 4. Delete data for this treatment (per section) ===
+            st.markdown("---")
+            st.markdown("##### 🗑️ ลบข้อมูลแปลงนี้ (แยกตามส่วน)")
+            st.caption(
+                "ลบเฉพาะข้อมูลของส่วนที่เลือกในแปลงนี้ (ทุกสัปดาห์) — "
+                "ข้อมูลแท็บอื่น (เช่น ขนาดทรงพุ่ม/จำนวนใบ) ไม่กระทบ — **ลบถาวร ไม่สามารถกู้คืนได้**"
+            )
+
+            # Check which sections have data for this treatment
+            exp_df_t = st.session_state.experiment_data
+            conc_df_t = st.session_state.concentration_data
+            mask_t = (exp_df_t["treatment"] == trt_name_c) if not exp_df_t.empty else pd.Series(dtype=bool)
+            has_harvest = not exp_df_t.empty and mask_t.any() and exp_df_t.loc[mask_t, ["fresh_weight", "root_length", "core_length", "head_diameter", "head_firmness"]].notna().any().any()
+            has_uvvis = not exp_df_t.empty and mask_t.any() and exp_df_t.loc[mask_t, ["sample_weight_g", "OD663", "OD645", "OD470", "OD765", "chl_a", "chl_b", "total_chl", "carotenoids", "total_phenolics"]].notna().any().any()
+            has_pigment = (not conc_df_t.empty and (conc_df_t["treatment"] == trt_name_c).any()) or (not exp_df_t.empty and mask_t.any() and exp_df_t.loc[mask_t, ["chl_a_mgL", "chl_b_mgL", "total_chl_mgL", "carotenoid_mgL"]].notna().any().any())
+
+            delete_sections = [
+                ("harvest", "🌾 ลบ Harvest Yield (ผลผลิตเก็บเกี่ยว)", has_harvest),
+                ("uvvis", "🧪 ลบ UV-Vis (ค่าดูดกลืนแสงแล็บ)", has_uvvis),
+                ("pigment", "🧪 ลบ Pigment Concentration (mg/L)", has_pigment),
+            ]
+
+            for section_key, section_label, has_data in delete_sections:
+                confirm_key = f"t3confirm_{section_key}_{idx_c}"
+                if not has_data and not st.session_state.get(confirm_key, False):
+                    st.caption(f"{section_label} — _ไม่มีข้อมูลส่วนนี้ในแปลง_")
+                    continue
+                if not st.session_state.get(confirm_key, False):
+                    if st.button(
+                        f"🗑️ {section_label}",
+                        key=f"t3btn_del_{section_key}_{idx_c}",
+                        type="secondary",
+                    ):
+                        st.session_state[confirm_key] = True
+                        st.rerun()
+                else:
+                    st.warning(
+                        f"⚠️ **ยืนยันการลบ** — {section_label} ของแปลง {trt_name_c} "
+                        f"จะถูกลบ**อย่างถาวร**และไม่สามารถกู้คืนได้"
+                    )
+                    bc_y, bc_n = st.columns(2)
+                    with bc_y:
+                        if st.button(
+                            "✅ ใช่ ลบข้อมูล",
+                            key=f"t3btn_confirm_yes_{section_key}_{idx_c}",
+                            type="primary",
+                        ):
+                            exp_out, conc_out = clear_tab3_section_data(
+                                st.session_state.experiment_data,
+                                st.session_state.concentration_data,
+                                trt_name_c,
+                                section_key,
+                            )
+                            st.session_state.experiment_data = exp_out
+                            st.session_state.concentration_data = conc_out
+                            save_experiment_data_to_disk(exp_out)
+                            save_concentration_data_to_disk(conc_out)
+                            st.session_state[confirm_key] = False
+                            st.success(f"🗑️ ลบ{section_label} ของแปลง {trt_name_c} เรียบร้อย")
+                            st.rerun()
+                    with bc_n:
+                        if st.button(
+                            "❌ ยกเลิก",
+                            key=f"t3btn_confirm_no_{section_key}_{idx_c}",
+                        ):
+                            st.session_state[confirm_key] = False
+                            st.rerun()
+
+    # Concentration comparison chart across treatments
+    st.markdown("---")
+    st.markdown("##### 📊 เปรียบเทียบค่าเฉลี่ย Pigment Concentration ระหว่างแปลงทดลอง (mg/L)")
+    conc_chart_df = st.session_state.concentration_data.copy()
+    if not conc_chart_df.empty:
+        conc_metric_key = st.selectbox(
+            "เลือกสารที่ต้องการแสดงกราฟ",
+            options=list(data_schema.CONCENTRATION_METRICS.keys()),
+            format_func=lambda k: data_schema.CONCENTRATION_METRICS[k],
+            key="conc_chart_metric_select",
+        )
+        # Aggregate to per-plant means, then per-treatment mean ± SD for error bars
+        plant_means = conc_chart_df.groupby(["treatment", "plant_id"], as_index=False)[conc_metric_key].mean()
+        stats_conc = plant_means.groupby("treatment")[conc_metric_key].agg(["mean", "std", "count"]).reset_index()
+        stats_conc["std"] = stats_conc["std"].fillna(0)
+
+        fig_conc = px.bar(
+            stats_conc,
+            x="treatment",
+            y="mean",
+            error_y="std",
+            color="treatment",
+            color_discrete_map=_active_color_map(),
+            labels={"treatment": "แปลงทดลอง (Treatment)", "mean": data_schema.CONCENTRATION_METRICS[conc_metric_key]},
+            title=f"{data_schema.CONCENTRATION_METRICS[conc_metric_key]} — Mean ± SD (per plant)",
+        )
+        fig_conc.update_layout(showlegend=False, height=450)
+        st.plotly_chart(fig_conc, use_container_width=True, key="conc_compare_bar_chart")
+    else:
+        st.info("📌 ยังไม่มีข้อมูล concentration (mg/L) — กรอกข้อมูลในตารางด้านบนหรืออัปโหลดไฟล์ concentration เพื่อแสดงกราฟ")
 
 # =============================================================================
 # TAB 4: STATISTICAL ANALYTICS & RESEARCH GRAPHS

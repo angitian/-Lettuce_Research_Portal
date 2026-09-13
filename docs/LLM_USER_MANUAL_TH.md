@@ -79,7 +79,8 @@ $$\text{DLI}_{\text{daily}} = \frac{\sum_{h=0}^{23} \left( \text{Hourly Mean PPF
  │    └── 🌱 Soil Chemical Properties (ตารางกรอกเคมีดิน)
  ├── 🔬 Harvest & Lab Results (กรอกผลเก็บเกี่ยว & ผลแล็บ OD)
  │    ├── 🌾 Harvest Yield Measurements (แยกแท็บ 5 แปลงทดลอง)
- │    └── 🧪 UV-Vis Spectrophotometer Absorbance (แยกแท็บ 5 แปลงทดลอง)
+ │    ├── 🧪 UV-Vis Spectrophotometer Absorbance (แยกแท็บ 5 แปลงทดลอง)
+ │    └── 🧪 Pigment Concentration (mg/L) — Replicate Entry (แยกแท็บ 5 แปลงทดลอง + สรุป Mean±SD + กราฟเปรียบเทียบ)
  └── 📊 Statistical Analytics & Graphs (วิเคราะห์ทางสถิติ สองปัจจัย ANOVA & กราฟ)
 ```
 
@@ -115,6 +116,22 @@ $$\text{DLI}_{\text{daily}} = \frac{\sum_{h=0}^{23} \left( \text{Hourly Mean PPF
 - **แยกแท็บตาม 5 แปลงทดลอง**: ใช้งานสะดวก ไม่สับสน
 - **ผลผลิตเก็บเกี่ยว (Harvest Yield)**: กรอกน้ำหนักสด (g), ความยาวราก (cm), ความยาวแกนกลาง (cm), เส้นผ่านศูนย์กลางหัว (cm) และดรรชนีความแน่นของหัว
 - **ผลแล็บ OD สเปกโตรโฟโตมิเตอร์**: กรอกน้ำหนักตัวอย่างใบ ($W_{\text{sample}}$) และค่า OD 663, 645, 470, 765 nm ระบบคำนวณปริมาณสารพฤกษเคมีให้อัตโนมัติ
+- **Pigment Concentration (mg/L) — Replicate Entry**: กรอก/แก้ไขข้อมูลความเข้มข้นสารสี **mg/L** ระดับ replicate (R1–R3 ต่อต้น) สำหรับ Chl a, Chl b, Total Chl, Carotenoid — ระบบคำนวณ **Mean ± SD** รายต้นอัตโนมัติ แสดงคำเตือนเมื่อ %CV > 20% และส่งค่าเฉลี่ยรายต้นเข้า `experiment_data` เพื่อใช้ใน Statistical Analytics (ANOVA / Tukey HSD / Correlation) พร้อมกราฟแท่งเปรียบเทียบระหว่างแปลงทดลองพร้อม Error Bar (SD)
+  - **รองรับการอัปโหลดไฟล์ concentration**: อัปโหลดไฟล์ Excel ที่ชื่อมีคำว่า `concentration` (เช่น `concentration Control-GM.xlsx`) ระบบจะตรวจจับและเปิด **หน้าตารางข้อมูล (dialog)** ให้เลือกแถวก่อนนำเข้า
+  - **Flow การนำเข้า (แบบเลือกแถว)**:
+    1. อัปโหลดไฟล์ → ระบบอ่าน **ทุกแถว** ในชีต (รองรับไฟล์ชีทเดียว) แล้วเปิด dialog
+    2. ใน dialog: คลิก checkbox แถวแรก → **Shift + คลิก checkbox แถวสุดท้าย** เพื่อเลือกทั้งช่วง (native multi-row selection ของ Streamlit)
+    3. เลือกเงื่อนไข: **Treatment** (แปลงทดลอง) + **วันที่เก็บตัวอย่าง** (week คำนวณอัตโนมัติจากวันที่ด้วยสูตร `max(1, round((date - START_DATE).days/7) + 1)`)
+    4. กด "นำเข้า N แถวที่เลือก" → ระบบ map คอลัมน์ + กำหนดเงื่อนไขให้ทุกแถวที่เลือก + merge เข้าระบบ
+  - **รูปแบบไฟล์ที่รองรับ**: ชีตที่มีคอลัมน์ `Sample_ID`, `Replicate`, `Weight_actual_g`, `Chl_a (mg/L)`, `Chl_b (mg/L)`, `Total_Chl (mg/L)`, `Carotenoid (mg/L)` (ไฟล์ชีทเดียว, ระบบเลือกชีตที่มีคอลัมน์ Replicate + (mg/L) อัตโนมัติ)
+  - **Merge แบบ Upsert**: อัปโหลดไฟล์เดิมซ้ำ → ข้อมูลใหม่ทับค่าเดิม (key: treatment + plant_id + replicate + week_no); อัปโหลด treatment/สัปดาห์อื่น → ต่อท้าย ไม่ทับกัน
+- **🗑️ ลบข้อมูลรายแปลง (แยกตามส่วน)**: ท้ายสุดของแต่ละ sub-tab แปลงทดลอง มีปุ่มลบข้อมูลแยก 3 ส่วน (ลบเฉพาะข้อมูลของส่วนนั้นในแปลงนี้ ทุกสัปดาห์ — ข้อมูลแท็บอื่น เช่น ขนาดทรงพุ่ม/จำนวนใบ ไม่กระทบ)
+  - **🗑️ ลบ Harvest Yield (ผลผลิตเก็บเกี่ยว)** — เคลียร์คอลัมน์ fresh_weight, root_length, core_length, head_diameter, head_firmness เป็นว่าง (แถวยังอยู่)
+  - **🗑️ ลบ UV-Vis (ค่าดูดกลืนแสงแล็บ)** — เคลียร์คอลัมน์ sample_weight_g, OD663/645/470/765 + ค่าคำนวณ (chl_a, chl_b, total_chl, carotenoids, total_phenolics) เป็นว่าง
+  - **🗑️ ลบ Pigment Concentration (mg/L)** — ลบแถว replicate ใน concentration_data ของแปลงนี้ + เคลียร์ค่าเฉลี่ย mg/L ใน experiment_data เป็นว่าง
+  - แต่ละปุ่มมี **2-step confirm** (กดปุ่ม → warning ยืนยัน → [✅ ใช่ ลบข้อมูล] / [❌ ยกเลิก])
+  - ถ้าส่วนนั้นไม่มีข้อมูลในแปลง → แสดงคำว่า "_ไม่มีข้อมูลส่วนนี้ในแปลง_" (ไม่มีปุ่มให้กด)
+  - **คำเตือน**: การลบเป็นแบบถาวร ไม่สามารถกู้คืนได้ — ควรตรวจสอบให้แน่ใจก่อนยืนยัน
 
 ### แท็บ 5: 📊 Statistical Analytics & Graphs
 - **ตัวเลือกตัวแปรที่ต้องการวิเคราะห์**: เลือกตัวแปรที่ต้องการวิเคราะห์ (เช่น `Total Chlorophyll`, `Canopy Width`, `Fresh Weight` ฯลฯ)
@@ -131,6 +148,7 @@ $$\text{DLI}_{\text{daily}} = \frac{\sum_{h=0}^{23} \left( \text{Hourly Mean PPF
 - **ไฟล์ข้อมูลเคมีดินและสภาพแวดล้อมรายสัปดาห์**: `data/saved_env_data.csv`
 - **ไฟล์สะสมข้อมูล PPFD Logger**: `data/accumulated_ppfd_logger.csv`
 - **ไฟล์สะสมข้อมูล อุณหภูมิ Logger**: `data/accumulated_temp_logger.csv`
+- **ไฟล์ข้อมูลความเข้มข้นสารสี mg/L (ระดับ replicate)**: `data/saved_concentration_data.csv`
 - **ไฟล์สำรองข้อมูลดิบเริ่มต้น**: `04-08-69.xlsx`
 
 ---

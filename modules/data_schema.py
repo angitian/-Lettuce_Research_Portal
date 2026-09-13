@@ -243,13 +243,32 @@ HARVEST_METRICS: Dict[str, str] = {
     "head_firmness": "Head Firmness Index"
 }
 
+# Pigment concentration values from lab extract (mg/L), entered at the
+# replicate level (R1–R3 per plant) and aggregated to a per-plant mean in
+# experiment_data. Kept separate from the mg/g FW values derived from OD
+# absorbance to avoid unit confusion and accidental overwrites.
+CONCENTRATION_METRICS: Dict[str, str] = {
+    "chl_a_mgL": "Chlorophyll a (mg/L)",
+    "chl_b_mgL": "Chlorophyll b (mg/L)",
+    "total_chl_mgL": "Total Chlorophyll (mg/L)",
+    "carotenoid_mgL": "Carotenoid (mg/L)",
+}
+
 PHYTOCHEMICAL_METRICS: Dict[str, str] = {
     "chl_a": "Chlorophyll a (mg/g FW)",
     "chl_b": "Chlorophyll b (mg/g FW)",
     "total_chl": "Total Chlorophyll (mg/g FW)",
     "carotenoids": "Carotenoids (mg/g FW)",
-    "total_phenolics": "Total Phenolics (mg GAE/g FW)"
+    "total_phenolics": "Total Phenolics (mg GAE/g FW)",
+    # mg/L pigment concentrations (replicate-level lab extract values,
+    # aggregated to per-plant means in experiment_data). Merged in here so
+    # they automatically flow into ALL_ANALYSIS_METRICS and the export
+    # sheets alongside the mg/g FW values derived from OD absorbance.
+    **CONCENTRATION_METRICS,
 }
+
+# Replicate identifiers used by the Pigment Concentration (mg/L) data editor.
+CONCENTRATION_REPLICATES: List[str] = ["R1", "R2", "R3"]
 
 ALL_ANALYSIS_METRICS: Dict[str, str] = {
     **WEEKLY_METRICS,
@@ -279,6 +298,10 @@ METRIC_TOOLTIPS: Dict[str, str] = {
     "total_chl": "คลอโรฟิลล์รวม (mg/g FW) - ผลรวมปริมาณคลอโรฟิลล์ เอ และ บี",
     "carotenoids": "แคโรทีนอยด์รวม (mg/g FW) - สารสีส้ม-เหลืองช่วยปกป้องแสงและต้านอนุมูลอิสระ",
     "total_phenolics": "สารประกอบฟีนอลิกรวม (mg GAE/g FW) - ปริมาณสารต้านอนุมูลอิสระที่วิเคราะห์ด้วย Folin-Ciocalteu",
+    "chl_a_mgL": "คลอโรฟิลล์ เอ (mg/L) - ความเข้มข้นสารสีเขียวในสารสกัดแล็บ (ระดับ replicate, ค่าเฉลี่ยรายต้นใช้ในสถิติ)",
+    "chl_b_mgL": "คลอโรฟิลล์ บี (mg/L) - ความเข้มข้นสารสีเขียวช่วยรับแสงในสารสกัดแล็บ (ระดับ replicate, ค่าเฉลี่ยรายต้นใช้ในสถิติ)",
+    "total_chl_mgL": "คลอโรฟิลล์รวม (mg/L) - ความเข้มข้นคลอโรฟิลล์รวมในสารสกัดแล็บ (ระดับ replicate, ค่าเฉลี่ยรายต้นใช้ในสถิติ)",
+    "carotenoid_mgL": "แคโรทีนอยด์รวม (mg/L) - ความเข้มข้นสารสีส้ม-เหลืองในสารสกัดแล็บ (ระดับ replicate, ค่าเฉลี่ยรายต้นใช้ในสถิติ)",
     "temp_c": "อุณหภูมิโรงเรือน (°C) - ค่าอุณหภูมิอากาศเฉลี่ยภายในโรงเรือนปลูก",
     "ppfd": "ความเข้มแสงสังเคราะห์แสง PPFD (μmol/m²/s) - ปริมาณโฟตอนแสงช่วงสังเคราะห์แสง",
     "soil_ph": "ค่าความเป็นกรด-ด่างของดิน (pH) - ค่า pH ของดินปลูกผักกาดหอม",

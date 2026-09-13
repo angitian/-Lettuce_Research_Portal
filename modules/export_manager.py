@@ -79,13 +79,14 @@ def generate_csv_export(df: pd.DataFrame) -> str:
     """Convert DataFrame to UTF-8 encoded CSV string with BOM for Excel compatibility."""
     return df.to_csv(index=False, encoding="utf-8-sig")
 
-def generate_multisheet_excel(df: pd.DataFrame, env_df: pd.DataFrame) -> bytes:
+def generate_multisheet_excel(df: pd.DataFrame, env_df: pd.DataFrame, concentration_df: pd.DataFrame = None) -> bytes:
     """
     Build structured multi-sheet Excel workbook (.xlsx):
     - Sheet 1: Raw Data
     - Sheet 2: Weekly Summary (Mean +/- SD)
     - Sheet 3: Phytochemical & Harvest Analysis
     - Sheet 4: Environmental Loggers
+    - Sheet 5: Pigment Concentration (mg/L) — replicate-level lab extract data
     """
     output = io.BytesIO()
     
@@ -131,6 +132,18 @@ def generate_multisheet_excel(df: pd.DataFrame, env_df: pd.DataFrame) -> bytes:
         # Sheet 4: Environmental Loggers
         if not env_df.empty:
             env_df.to_excel(writer, sheet_name="Environmental Loggers", index=False)
+
+        # Sheet 5: Pigment Concentration (mg/L) — replicate-level
+        if concentration_df is not None and not concentration_df.empty:
+            conc_cols = [
+                "record_date", "week_no", "treatment", "variety", "lighting",
+                "plant_id", "replicate", "weight_g",
+                "chl_a_mgL", "chl_b_mgL", "total_chl_mgL", "carotenoid_mgL",
+            ]
+            conc_export = concentration_df.reindex(
+                columns=[c for c in conc_cols if c in concentration_df.columns]
+            )
+            conc_export.to_excel(writer, sheet_name="Pigment Concentration (mg-L)", index=False)
 
     return output.getvalue()
 
