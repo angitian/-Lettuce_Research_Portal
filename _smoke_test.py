@@ -288,14 +288,71 @@ assert len(c_p[c_p["treatment"] == "LED_GM"]) == 1, "pigment: LED_GM conc stays"
 print("=== clear_tab3_section_data (pigment) verified: conc rows removed + mgL cleared, harvest+canopy stay ===")
 
 # =============================================================================
-# 9. Regression: upload concentration file → dialog opens without TypeError
+# 8b. Tab 3 multi-sheet import helpers (read_tab3_excel_sheets, detect_tab3_section, parse_tab3_sheet)
+# =============================================================================
+sheets_dict, sheets_msg = storage.read_tab3_excel_sheets(conc_bytes)
+assert sheets_dict, f"Expected non-empty sheets dict, got empty"
+assert "Sheet1" in sheets_dict, f"Expected Sheet1 in {list(sheets_dict.keys())}"
+sheet1_df = sheets_dict["Sheet1"]
+assert len(sheet1_df) == 15, f"Expected 15 rows, got {len(sheet1_df)}"
+orig_cols = ["Sample_ID", "Replicate", "Weight_actual_g", "Chl_a (mg/L)", "Chl_b (mg/L)", "Total_Chl (mg/L)", "Carotenoid (mg/L)"]
+assert list(sheet1_df.columns) == orig_cols, f"Original headers not preserved: {list(sheet1_df.columns)}"
+print("=== read_tab3_excel_sheets verified: 15 rows, original headers preserved ===")
+
+# detect_tab3_section
+sec_pigment = storage.detect_tab3_section(sheet1_df)
+assert sec_pigment == "pigment", f"Expected pigment, got {sec_pigment}"
+harvest_test = pd.DataFrame({"plant_id": ["P1"], "fresh_weight": [150.0], "root_length": [10.0]})
+assert storage.detect_tab3_section(harvest_test) == "harvest"
+uvvis_test = pd.DataFrame({"plant_id": ["P1"], "OD663": [0.5], "OD645": [0.3], "sample_weight_g": [0.5]})
+assert storage.detect_tab3_section(uvvis_test) == "uvvis"
+unknown_test = pd.DataFrame({"plant_id": ["P1"], "unknown_col": [1]})
+assert storage.detect_tab3_section(unknown_test) is None
+print("=== detect_tab3_section verified: pigment/uvvis/harvest/None ===")
+
+# parse_tab3_sheet (pigment, 3 rows)
+pigment_out, pigment_msg = storage.parse_tab3_sheet(
+    sheet1_df.head(3), treatment="Control_GM", date="2026-08-31", section="pigment"
+)
+assert len(pigment_out) == 3, f"Expected 3 rows, got {len(pigment_out)}"
+assert set(["chl_a_mgL", "chl_b_mgL", "total_chl_mgL", "carotenoid_mgL"]).issubset(set(pigment_out.columns))
+assert pigment_out["treatment"].iloc[0] == "Control_GM"
+assert pigment_out["week_no"].iloc[0] == 5
+print("=== parse_tab3_sheet (pigment) verified: 3 rows, treatment=Control_GM, week=5 ===")
+
+# parse_tab3_sheet (harvest)
+harvest_out, harvest_msg = storage.parse_tab3_sheet(
+    harvest_test, treatment="LED_GM", date="2026-09-01", section="harvest"
+)
+assert len(harvest_out) == 1
+assert "fresh_weight" in harvest_out.columns
+assert harvest_out["treatment"].iloc[0] == "LED_GM"
+print("=== parse_tab3_sheet (harvest) verified: 1 row, treatment=LED_GM ===")
+
+# parse_tab3_sheet (uvvis)
+uvvis_out, uvvis_msg = storage.parse_tab3_sheet(
+    uvvis_test, treatment="LED_F (1)", date="2026-09-01", section="uvvis"
+)
+assert len(uvvis_out) == 1
+assert "OD663" in uvvis_out.columns
+assert uvvis_out["treatment"].iloc[0] == "LED_F (1)"
+print("=== parse_tab3_sheet (uvvis) verified: 1 row, treatment=LED_F (1) ===")
+
+# parse_tab3_sheet (auto-detect)
+auto_out, auto_msg = storage.parse_tab3_sheet(harvest_test, treatment="Control_F", date="2026-09-01")
+assert "fresh_weight" in auto_out.columns
+assert auto_out["treatment"].iloc[0] == "Control_F"
+print("=== parse_tab3_sheet (auto-detect) verified ===")
+
+# =============================================================================
+# 9. Regression: upload concentration file via Tab 3 uploader → dialog opens without TypeError
 #    (st.dataframe in Streamlit 1.58 uses on_select + selection_mode, NOT selection)
 # =============================================================================
 at2 = AppTest.from_file("app.py", default_timeout=120)
 at2.run()
 assert not at2.exception, f"App failed on initial render: {at2.exception[0].value if at2.exception else ''}"
-# Main uploader is the one labeled "Upload XLSX / CSV Data" (index 2: PPFD=0, Temp=1, Main=2)
-at2.file_uploader[2].set_value([
+# Uploaders: 0=sidebar main, 1=PPFD, 2=Temp, 3=Tab3 (Harvest & Lab Results)
+at2.file_uploader[3].set_value([
     ("concentration Control-GM.xlsx", conc_bytes,
      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 ])
@@ -303,6 +360,6 @@ at2.run()
 assert not at2.exception, (
     f"Dialog TypeError still present after upload: {at2.exception[0].value if at2.exception else ''}"
 )
-print("=== Regression: concentration upload dialog opens without TypeError ===")
+print("=== Regression: Tab 3 concentration upload dialog opens without TypeError ===")
 
 print("=== ALL TESTS PASSED ===")

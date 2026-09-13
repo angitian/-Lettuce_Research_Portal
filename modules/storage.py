@@ -527,6 +527,258 @@ def parse_concentration_excel(file_bytes, filename=None, target_treatment=None, 
     return parse_concentration_rows(raw_df, treatment, date=target_date, week=target_week)
 
 
+# -----------------------------------------------------------------------------
+# Tab 3 (Harvest & Lab Results) multi-sheet import helpers
+# -----------------------------------------------------------------------------
+
+
+# Column aliases for each section. Keys are matched case-insensitively
+# after stripping whitespace, so trailing spaces / case variants work.
+_TAB3_COL_ALIASES = {
+    # Shared
+    "plant_id": ["plant_id", "sample_id", "หมายเลขต้น", "plant id", "plant"],
+    "replicate": ["replicate", "rep", "replication"],
+    # Harvest
+    "fresh_weight": ["fresh_weight", "น้ำหนักสด (g)", "น้ำหนักสด (กรัม)", "fresh weight (g)", "fw (g)"],
+    "root_length": ["root_length", "ความยาวราก (ซม.)", "ความยาวราก (cm)", "root length (cm)"],
+    "core_length": ["core_length", "ความยาวแกนกลาง (ซม.)", "ความยาวแกน (cm)", "core length (cm)"],
+    "head_diameter": ["head_diameter", "เส้นผ่านศูนย์กลางหัว (ซม.)", "head diameter (cm)"],
+    "head_firmness": ["head_firmness", "ดัชนีความแน่นหัว", "ดรรชนีความแน่นของหัว", "head firmness"],
+    # UV-Vis
+    "sample_weight_g": ["sample_weight_g", "น้ำหนักตัวอย่าง (g)", "sample weight (g)", "sw (g)"],
+    "OD663": ["od663", "od 663", "od 663 nm", "663 nm"],
+    "OD645": ["od645", "od 645", "od 645 nm", "645 nm"],
+    "OD470": ["od470", "od 470", "od 470 nm", "470 nm"],
+    "OD765": ["od765", "od 765", "od 765 nm", "765 nm"],
+    # Pigment concentration (mg/L)
+    "weight_g": ["weight_g", "weight_actual_g", "น้ำหนัก (g)", "weight (g)"],
+    "chl_a_mgL": ["chl_a_mgl", "chl_a (mg/l)", "chl a (mg/l)", "chlorophyll a (mg/l)"],
+    "chl_b_mgL": ["chl_b_mgl", "chl_b (mg/l)", "chl b (mg/l)", "chlorophyll b (mg/l)"],
+    "total_chl_mgL": ["total_chl_mgl", "total_chl (mg/l)", "total chl (mg/l)", "total chlorophyll (mg/l)"],
+    "carotenoid_mgL": ["carotenoid_mgl", "carotenoid (mg/l)", "carotenoids (mg/l)"],
+}
+
+
+def _tab3_rename_columns(df):
+    """Renames raw lab columns to canonical schema names using alias map."""
+    rename_map = {}
+    for col in df.columns:
+        col_norm = str(col).strip().lower()
+        for target, aliases in _TAB3_COL_ALIASES.items():
+            if any(col_norm == a.strip().lower() for a in aliases):
+                rename_map[col] = target
+                break
+    return df.rename(columns=rename_map)
+
+
+def read_tab3_excel_sheets(file_bytes):
+    """
+    Reads ALL sheets from an Excel file and returns them as a dict
+    {sheet_name: raw_df} with original column headers preserved (no mapping,
+    no filtering, no metadata stamping). Empty trailing rows are dropped.
+
+    Returns (sheets_dict, message_str). sheets_dict is empty on failure.
+    """
+    try:
+        excel_file = pd.ExcelFile(io.BytesIO(file_bytes))
+    except Exception as exc:
+        return {}, f"⚠️ ไม่สามารถเปิดไฟล์ Excel ได้: {exc}"
+
+    sheets = {}
+    for sheet in excel_file.sheet_names:
+        try:
+            sdf = pd.read_excel(excel_file, sheet_name=sheet)
+        except Exception:
+            continue
+        sdf = sdf.dropna(how="all").reset_index(drop=True)
+        if not sdf.empty:
+            sheets[sheet] = sdf
+
+    if not sheets:
+        return {}, "⚠️ ไฟล์ไม่มีข้อมูลในทุกชีต"
+    return sheets, f"✅ อ่านไฟล์สำเร็จ — {len(sheets)} ชีต"
+
+
+def detect_tab3_section(df):
+    """
+    Detects which section of the Harvest & Lab Results tab a raw sheet
+    belongs to, based on its columns.
+
+    Returns one of: "pigment", "uvvis", "harvest", or None.
+    Detection priority: pigment > uvvis > harvest (a sheet with both OD and
+    mg/L columns is treated as pigment because the lab file is the source of
+    truth for mg/L; UV-Vis raw OD values come from a separate sheet).
+    """
+    if df is None or df.empty:
+        return None
+    renamed = _tab3_rename_columns(df.copy())
+    cols = {str(c).strip().lower() for c in renamed.columns}
+
+    # Pigment: replicate + at least one mg/L column
+    has_replicate = "replicate" in cols
+    has_mgl = any(c in cols for c in [
+        "chl_a_mgl", "chl_b_mgl", "total_chl_mgl", "carotenoid_mgl",
+    ])
+    if has_replicate and has_mgl:
+        return "pigment"
+
+    # UV-Vis: at least one OD column
+    has_od = any(c in cols for c in ["od663", "od645", "od470", "od765"])
+    if has_od:
+        return "uvvis"
+
+    # Harvest: at least one harvest column
+    has_harvest = any(c in cols for c in [
+        "fresh_weight", "root_length", "core_length",
+        "head_diameter", "head_firmness",
+    ])
+    if has_harvest:
+        return "harvest"
+
+    return None
+
+
+def parse_tab3_sheet(raw_df, treatment, date=None, week=None, section=None):
+    """
+    Maps a raw sheet (already renamed by the user's row selection) into the
+    appropriate schema and stamps treatment / variety / lighting / date /
+    week_no onto every row.
+
+    Args:
+      raw_df: raw rows the user selected (original lab headers).
+      treatment: canonical treatment name (e.g. 'Control_GM'). Required.
+      date: measurement date (str / datetime.date / datetime).
+      week: optional explicit week_no override.
+      section: one of "harvest", "uvvis", "pigment". If None, auto-detect.
+
+    Returns (df, message_str). df is empty on failure.
+    """
+    if raw_df is None or raw_df.empty:
+        return pd.DataFrame(), "⚠️ ไม่มีแถวที่เลือกให้นำเข้า"
+
+    # Resolve section if not provided
+    if section is None:
+        section = detect_tab3_section(raw_df)
+    if section is None:
+        return pd.DataFrame(), (
+            "⚠️ ตรวจไม่พบประเภทข้อมูล (Harvest / UV-Vis / Pigment) "
+            "จากคอลัมน์ในชีตนี้"
+        )
+
+    # Rename columns to canonical schema names
+    df = _tab3_rename_columns(raw_df.copy())
+
+    # Resolve treatment
+    canonical = _normalize_sheet_name(str(treatment).strip())
+    if canonical is None:
+        return pd.DataFrame(), (
+            f"⚠️ treatment ไม่ตรงกับ treatment ที่รองรับ: {treatment}"
+        )
+
+    # Resolve record_date
+    if date is not None:
+        try:
+            resolved_date = pd.to_datetime(date).date()
+        except Exception:
+            resolved_date = None
+    else:
+        resolved_date = None
+    if resolved_date is None:
+        exp_df = st.session_state.get("experiment_data")
+        if exp_df is not None and not exp_df.empty and "record_date" in exp_df.columns:
+            latest_dates = exp_df["record_date"].dropna()
+            if not latest_dates.empty:
+                try:
+                    parsed_dates = pd.to_datetime(latest_dates, errors="coerce").dropna()
+                    if not parsed_dates.empty:
+                        resolved_date = parsed_dates.max().date()
+                except Exception:
+                    resolved_date = None
+        if resolved_date is None:
+            resolved_date = datetime.date.today()
+    record_date_str = resolved_date.isoformat()
+
+    # Resolve week_no
+    if week is not None:
+        week_no = int(week)
+    else:
+        week_no = _week_from_date(resolved_date)
+        if week_no is None:
+            week_no = 1
+
+    # ----- Section-specific mapping -----
+    if section == "pigment":
+        required = ["plant_id", "replicate"]
+        missing = [c for c in required if c not in df.columns]
+        if missing:
+            return pd.DataFrame(), (
+                f"⚠️ ไฟล์ concentration ขาดคอลัมน์ที่จำเป็น: {missing}"
+            )
+        for c in ["chl_a_mgL", "chl_b_mgL", "total_chl_mgL", "carotenoid_mgL", "weight_g"]:
+            if c not in df.columns:
+                df[c] = np.nan
+        for c in ["weight_g", "chl_a_mgL", "chl_b_mgL", "total_chl_mgL", "carotenoid_mgL"]:
+            df[c] = pd.to_numeric(df[c], errors="coerce")
+        df = df.dropna(subset=["plant_id"], how="all")
+        df["plant_id"] = df["plant_id"].astype(str).str.strip()
+        df["replicate"] = df["replicate"].astype(str).str.strip()
+        df["treatment"] = canonical
+        df["variety"] = data_schema.VARIETY_MAP.get(canonical, "Green Moon")
+        df["lighting"] = data_schema.LIGHTING_MAP.get(canonical, "Control")
+        df["record_date"] = record_date_str
+        df["week_no"] = week_no
+        out_cols = [
+            "record_date", "week_no", "treatment", "variety", "lighting",
+            "plant_id", "replicate", "weight_g",
+            "chl_a_mgL", "chl_b_mgL", "total_chl_mgL", "carotenoid_mgL",
+        ]
+        for c in out_cols:
+            if c not in df.columns:
+                df[c] = np.nan
+        df = df[out_cols].reset_index(drop=True)
+        return df, (
+            f"✅ นำเข้าข้อมูล concentration สำเร็จ — {len(df)} แถว replicate "
+            f"(treatment={canonical}, date={record_date_str}, week={week_no})"
+        )
+
+    # harvest / uvvis -> experiment_data schema
+    if "plant_id" not in df.columns:
+        return pd.DataFrame(), "⚠️ ขาดคอลัมน์ plant_id (หมายเลขต้น)"
+    df = df.dropna(subset=["plant_id"], how="all")
+    df["plant_id"] = df["plant_id"].astype(str).str.strip()
+    df["treatment"] = canonical
+    df["variety"] = data_schema.VARIETY_MAP.get(canonical, "Green Moon")
+    df["lighting"] = data_schema.LIGHTING_MAP.get(canonical, "Control")
+    df["record_date"] = record_date_str
+    df["week_no"] = week_no
+
+    if section == "harvest":
+        keep = [
+            "fresh_weight", "root_length", "core_length",
+            "head_diameter", "head_firmness",
+        ]
+    else:  # uvvis
+        keep = ["sample_weight_g", "OD663", "OD645", "OD470", "OD765"]
+    for c in keep:
+        if c not in df.columns:
+            df[c] = np.nan
+        df[c] = pd.to_numeric(df[c], errors="coerce")
+
+    # Build a minimal experiment_data row with only the section's columns +
+    # the merge keys. Other columns are filled by ensure_all_columns_exist
+    # during merge_accumulative_experiment_data.
+    out_cols = ["record_date", "week_no", "treatment", "variety", "lighting", "plant_id"] + keep
+    for c in out_cols:
+        if c not in df.columns:
+            df[c] = np.nan
+    df = df[out_cols].reset_index(drop=True)
+    label = "Harvest Yield" if section == "harvest" else "UV-Vis Absorbance"
+    return df, (
+        f"✅ นำเข้าข้อมูล {label} สำเร็จ — {len(df)} แถว "
+        f"(treatment={canonical}, date={record_date_str}, week={week_no})"
+    )
+
+
 def merge_concentration_data(existing_df, new_df):
     """
     Upserts replicate-level concentration data using the composite key

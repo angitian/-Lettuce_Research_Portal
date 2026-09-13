@@ -77,7 +77,8 @@ $$\text{DLI}_{\text{daily}} = \frac{\sum_{h=0}^{23} \left( \text{Hourly Mean PPF
  │    ├── 📈 Hourly Temperature & PPFD Graphs (กราฟเส้นรายชั่วโมง + เลือกช่วงวันที่)
  │    ├── ☀️ Daily Light Integral (DLI) Analytics (วิเคราะห์ DLI สะสมรายวัน + เลือกช่วงวันที่)
  │    └── 🌱 Soil Chemical Properties (ตารางกรอกเคมีดิน)
- ├── 🔬 Harvest & Lab Results (กรอกผลเก็บเกี่ยว & ผลแล็บ OD)
+ ├── 🔬 Harvest & Lab Results (กรอกผลเก็บเกี่ยว & ผลแล็บ OD + อัปโหลดข้อมูล)
+ │    ├── 📥 นำเข้าข้อมูล Harvest / UV-Vis / Pigment (อัปโหลด Excel หลายชีท + เลือกชีท + เลือกแถว)
  │    ├── 🌾 Harvest Yield Measurements (แยกแท็บ 5 แปลงทดลอง)
  │    ├── 🧪 UV-Vis Spectrophotometer Absorbance (แยกแท็บ 5 แปลงทดลอง)
  │    └── 🧪 Pigment Concentration (mg/L) — Replicate Entry (แยกแท็บ 5 แปลงทดลอง + สรุป Mean±SD + กราฟเปรียบเทียบ)
@@ -117,14 +118,20 @@ $$\text{DLI}_{\text{daily}} = \frac{\sum_{h=0}^{23} \left( \text{Hourly Mean PPF
 - **ผลผลิตเก็บเกี่ยว (Harvest Yield)**: กรอกน้ำหนักสด (g), ความยาวราก (cm), ความยาวแกนกลาง (cm), เส้นผ่านศูนย์กลางหัว (cm) และดรรชนีความแน่นของหัว
 - **ผลแล็บ OD สเปกโตรโฟโตมิเตอร์**: กรอกน้ำหนักตัวอย่างใบ ($W_{\text{sample}}$) และค่า OD 663, 645, 470, 765 nm ระบบคำนวณปริมาณสารพฤกษเคมีให้อัตโนมัติ
 - **Pigment Concentration (mg/L) — Replicate Entry**: กรอก/แก้ไขข้อมูลความเข้มข้นสารสี **mg/L** ระดับ replicate (R1–R3 ต่อต้น) สำหรับ Chl a, Chl b, Total Chl, Carotenoid — ระบบคำนวณ **Mean ± SD** รายต้นอัตโนมัติ แสดงคำเตือนเมื่อ %CV > 20% และส่งค่าเฉลี่ยรายต้นเข้า `experiment_data` เพื่อใช้ใน Statistical Analytics (ANOVA / Tukey HSD / Correlation) พร้อมกราฟแท่งเปรียบเทียบระหว่างแปลงทดลองพร้อม Error Bar (SD)
-  - **รองรับการอัปโหลดไฟล์ concentration**: อัปโหลดไฟล์ Excel ที่ชื่อมีคำว่า `concentration` (เช่น `concentration Control-GM.xlsx`) ระบบจะตรวจจับและเปิด **หน้าตารางข้อมูล (dialog)** ให้เลือกแถวก่อนนำเข้า
-  - **Flow การนำเข้า (แบบเลือกแถว)**:
-    1. อัปโหลดไฟล์ → ระบบอ่าน **ทุกแถว** ในชีต (รองรับไฟล์ชีทเดียว) แล้วเปิด dialog
-    2. ใน dialog: คลิก checkbox แถวแรก → **Shift + คลิก checkbox แถวสุดท้าย** เพื่อเลือกทั้งช่วง (native multi-row selection ของ Streamlit)
-    3. เลือกเงื่อนไข: **Treatment** (แปลงทดลอง) + **วันที่เก็บตัวอย่าง** (week คำนวณอัตโนมัติจากวันที่ด้วยสูตร `max(1, round((date - START_DATE).days/7) + 1)`)
-    4. กด "นำเข้า N แถวที่เลือก" → ระบบ map คอลัมน์ + กำหนดเงื่อนไขให้ทุกแถวที่เลือก + merge เข้าระบบ
-  - **รูปแบบไฟล์ที่รองรับ**: ชีตที่มีคอลัมน์ `Sample_ID`, `Replicate`, `Weight_actual_g`, `Chl_a (mg/L)`, `Chl_b (mg/L)`, `Total_Chl (mg/L)`, `Carotenoid (mg/L)` (ไฟล์ชีทเดียว, ระบบเลือกชีตที่มีคอลัมน์ Replicate + (mg/L) อัตโนมัติ)
-  - **Merge แบบ Upsert**: อัปโหลดไฟล์เดิมซ้ำ → ข้อมูลใหม่ทับค่าเดิม (key: treatment + plant_id + replicate + week_no); อัปโหลด treatment/สัปดาห์อื่น → ต่อท้าย ไม่ทับกัน
+  - **รองรับการอัปโหลดไฟล์ Harvest / UV-Vis / Pigment Concentration**: อัปโหลดไฟล์ Excel ได้โดยตรงในแท็บนี้ (ด้านบนสุด) — ระบบอ่าน **ทุกชีท** แล้วเปิด **dialog** ให้เลือกชีท + เลือกแถวก่อนนำเข้า
+  - **Flow การนำเข้า (เลือกชีท + เลือกแถว)**:
+    1. อัปโหลดไฟล์ Excel → ระบบอ่าน **ทุกชีต** แล้วเปิด dialog
+    2. ใน dialog: **เลือกชีท** จาก dropdown (ทีละชีท) — ระบบ **ตรวจจับประเภทข้อมูลอัตโนมัติ** (Harvest / UV-Vis / Pigment) จากคอลัมน์ในชีตนั้น (แม้ชื่อชีทไม่ตรงกับระบบ)
+    3. คลิก checkbox แถวแรก → **Shift + คลิก checkbox แถวสุดท้าย** เพื่อเลือกทั้งช่วง (native multi-row selection ของ Streamlit)
+    4. เลือกเงื่อนไข: **Treatment** (แปลงทดลอง) + **วันที่เก็บตัวอย่าง** (week คำนวณอัตโนมัติจากวันที่ด้วยสูตร `max(1, round((date - START_DATE).days/7) + 1)`)
+    5. กด "นำเข้า N แถวที่เลือก" → ระบบ map คอลัมน์ + กำหนดเงื่อนไขให้ทุกแถวที่เลือก + merge เข้าระบบ
+  - **การตรวจจับประเภทข้อมูล (auto-detect)**:
+    - **Pigment Concentration** — ชีตที่มีคอลัมน์ `Replicate` + คอลัมน์ `(mg/L)` (เช่น `Chl_a (mg/L)`, `Chl_b (mg/L)`, `Total_Chl (mg/L)`, `Carotenoid (mg/L)`)
+    - **UV-Vis Absorbance** — ชีตที่มีคอลัมน์ `OD663`/`OD645`/`OD470`/`OD765` หรือ `sample_weight_g`
+    - **Harvest Yield** — ชีตที่มีคอลัมน์ `fresh_weight`/`root_length`/`core_length`/`head_diameter`/`head_firmness`
+    - รองรับ **ชื่อคอลัมน์ไทย + lab** (เช่น `น้ำหนักสด (g)` → `fresh_weight`, `น้ำหนักตัวอย่าง (g)` → `sample_weight_g`, `Sample_ID` → `plant_id`)
+  - **รูปแบบไฟล์ที่รองรับ**: ไฟล์ Excel (.xlsx/.xls) ที่มีหลายชีทได้ — แต่ละชีท = ข้อมูลชุดเดียว ผู้ใช้เลือกชีท + กำหนดแปลงเอง (ชื่อชีทไม่ต้องตรงกับระบบ)
+  - **Merge แบบ Upsert**: อัปโหลดไฟล์เดิมซ้ำ → ข้อมูลใหม่ทับค่าเดิม (key: treatment + plant_id + replicate + week_no สำหรับ pigment; treatment + plant_id + record_date สำหรับ harvest/uvvis); อัปโหลด treatment/สัปดาห์อื่น → ต่อท้าย ไม่ทับกัน
 - **🗑️ ลบข้อมูลรายแปลง (แยกตามส่วน)**: ท้ายสุดของแต่ละ sub-tab แปลงทดลอง มีปุ่มลบข้อมูลแยก 3 ส่วน (ลบเฉพาะข้อมูลของส่วนนั้นในแปลงนี้ ทุกสัปดาห์ — ข้อมูลแท็บอื่น เช่น ขนาดทรงพุ่ม/จำนวนใบ ไม่กระทบ)
   - **🗑️ ลบ Harvest Yield (ผลผลิตเก็บเกี่ยว)** — เคลียร์คอลัมน์ fresh_weight, root_length, core_length, head_diameter, head_firmness เป็นว่าง (แถวยังอยู่)
   - **🗑️ ลบ UV-Vis (ค่าดูดกลืนแสงแล็บ)** — เคลียร์คอลัมน์ sample_weight_g, OD663/645/470/765 + ค่าคำนวณ (chl_a, chl_b, total_chl, carotenoids, total_phenolics) เป็นว่าง

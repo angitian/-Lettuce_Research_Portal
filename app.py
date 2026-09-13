@@ -62,6 +62,10 @@ save_concentration_data_to_disk = getattr(storage, "save_concentration_data_to_d
 generate_empty_concentration_data = getattr(storage, "generate_empty_concentration_data")
 delete_treatment_week_data = getattr(storage, "delete_treatment_week_data")
 clear_tab3_section_data = getattr(storage, "clear_tab3_section_data")
+# Tab 3 multi-sheet import helpers
+read_tab3_excel_sheets = getattr(storage, "read_tab3_excel_sheets")
+detect_tab3_section = getattr(storage, "detect_tab3_section")
+parse_tab3_sheet = getattr(storage, "parse_tab3_sheet")
 
 import modules.logger_processing as logger_processing
 importlib.reload(logger_processing)
@@ -165,21 +169,63 @@ if "selected_date" not in st.session_state:
 
 
 # -----------------------------------------------------------------------------
-# Concentration import dialog: shows all rows, user selects (checkbox + shift),
-# assigns treatment + date, then imports selected rows only.
+# Tab 3 (Harvest & Lab Results) import dialog: reads ALL sheets, lets the
+# user pick a sheet (dropdown), auto-detects the section (harvest/uvvis/pigment),
+# shows all rows for multi-row selection (checkbox + shift-range), then
+# assigns treatment + date and imports the selected rows.
 # -----------------------------------------------------------------------------
-@st.dialog("🧪 นำเข้า Pigment Concentration (mg/L)", width="large")
-def _open_concentration_import_dialog(filename, default_date):
-    raw_df = st.session_state.conc_pending.get(filename)
-    if raw_df is None or raw_df.empty:
+@st.dialog("🧪 นำเข้าข้อมูล Harvest & Lab Results", width="large")
+def _open_tab3_import_dialog(filename, default_date):
+    sheets = st.session_state.t3_pending.get(filename)
+    if not sheets:
         st.warning("ไม่มีข้อมูลในไฟล์นี้")
-        if st.button("ปิด", key=f"conc_close_empty_{filename}"):
-            st.session_state.conc_imported.add(filename)
+        if st.button("ปิด", key=f"t3_close_empty_{filename}"):
+            st.session_state.t3_imported.add(filename)
             st.rerun()
         return
 
+    sheet_names = list(sheets.keys())
     st.caption(
-        f"📄 **{filename}** — {len(raw_df)} แถว | "
+        f"📄 **{filename}** — {len(sheet_names)} ชีต | "
+        "เลือกชีททีละตัวด้านล่าง ตรวจจับประเภทข้อมูลอัตโนมัติ "
+        "(Harvest / UV-Vis / Pigment)"
+    )
+
+    # Sheet selector (one at a time)
+    selected_sheet = st.selectbox(
+        "เลือกชีทข้อมูล",
+        options=sheet_names,
+        key=f"t3_sheet_{filename}",
+        help="แต่ละชีท = ข้อมูลชุดเดียว ตรวจจับประเภทจากคอลัมน์อัตโนมัติ",
+    )
+    raw_df = sheets[selected_sheet]
+    section = detect_tab3_section(raw_df)
+    section_label = {
+        "pigment": "🧪 Pigment Concentration (mg/L)",
+        "uvvis": "🔬 UV-Vis Spectrophotometer Absorbance",
+        "harvest": "🥬 Harvest Yield Measurements",
+    }.get(section, "⚠️ ตรวจไม่พบประเภทข้อมูล")
+    st.info(f"ประเภทข้อมูลที่ตรวจพบ: **{section_label}** — {len(raw_df)} แถว")
+
+    if section is None:
+        st.error(
+            "ไม่สามารถตรวจจับประเภทข้อมูลจากคอลัมน์ในชีตนี้ — "
+            "กรุณาตรวจสอบว่าชีตมีคอลัมน์ที่ระบบรองรับ "
+            "(plant_id + คอลัมน์ของ Harvest/UV-Vis/Pigment)"
+        )
+        bc1, bc2 = st.columns(2)
+        with bc1:
+            if st.button("ข้ามไฟล์นี้", key=f"t3_skip_nodetect_{filename}"):
+                st.session_state.t3_imported.add(filename)
+                st.session_state.t3_pending.pop(filename, None)
+                st.rerun()
+        with bc2:
+            if st.button("ปิด", key=f"t3_close_nodetect_{filename}"):
+                st.session_state.t3_imported.add(filename)
+                st.rerun()
+        return
+
+    st.caption(
         "เลือกแถวที่จะนำเข้า: คลิก checkbox แถวแรก → **Shift + คลิก checkbox แถวสุดท้าย** "
         "เพื่อเลือกทั้งช่วง แล้วกำหนดเงื่อนไขด้านล่าง"
     )
@@ -189,7 +235,7 @@ def _open_concentration_import_dialog(filename, default_date):
         raw_df,
         on_select="rerun",
         selection_mode="multi-row",
-        key=f"conc_sel_{filename}",
+        key=f"t3_sel_{filename}_{selected_sheet}",
         use_container_width=True,
         hide_index=True,
     )
@@ -211,14 +257,14 @@ def _open_concentration_import_dialog(filename, default_date):
             "แปลงทดลอง (Treatment)",
             options=TREATMENTS,
             index=default_idx,
-            key=f"conc_trt_{filename}",
+            key=f"t3_trt_{filename}_{selected_sheet}",
             help="กำหนดแปลงทดลองให้ทุกแถวที่เลือก",
         )
     with cc2:
         record_date = st.date_input(
             "วันที่เก็บตัวอย่าง",
             value=default_date,
-            key=f"conc_date_{filename}",
+            key=f"t3_date_{filename}_{selected_sheet}",
             help="วันที่เก็บตัวอย่าง — week จะคำนวณอัตโนมัติ",
         )
 
@@ -226,34 +272,44 @@ def _open_concentration_import_dialog(filename, default_date):
     with bc1:
         if st.button(
             f"นำเข้า {len(selected_rows)} แถวที่เลือก",
-            key=f"conc_import_{filename}",
+            key=f"t3_import_{filename}_{selected_sheet}",
             type="primary",
             disabled=(len(selected_rows) == 0),
         ):
             selected_raw = raw_df.iloc[selected_rows]
-            new_conc_df, msg = parse_concentration_rows(
-                selected_raw, treatment, date=record_date
+            new_df, msg = parse_tab3_sheet(
+                selected_raw, treatment, date=record_date, section=section
             )
-            if not new_conc_df.empty:
-                st.session_state.concentration_data = merge_concentration_data(
-                    st.session_state.concentration_data, new_conc_df
-                )
-                st.session_state.experiment_data = apply_concentration_means_to_experiment(
-                    st.session_state.experiment_data, st.session_state.concentration_data
-                )
-                save_concentration_data_to_disk(st.session_state.concentration_data)
-                save_experiment_data_to_disk(st.session_state.experiment_data)
-                st.session_state.conc_imported.add(filename)
-                # Remove from pending so the dialog doesn't reopen
-                st.session_state.conc_pending.pop(filename, None)
-                st.success(f"🧪 {msg}")
+            if not new_df.empty:
+                if section == "pigment":
+                    st.session_state.concentration_data = merge_concentration_data(
+                        st.session_state.concentration_data, new_df
+                    )
+                    st.session_state.experiment_data = apply_concentration_means_to_experiment(
+                        st.session_state.experiment_data, st.session_state.concentration_data
+                    )
+                    save_concentration_data_to_disk(st.session_state.concentration_data)
+                    save_experiment_data_to_disk(st.session_state.experiment_data)
+                else:
+                    # harvest / uvvis -> experiment_data
+                    st.session_state.experiment_data = merge_accumulative_experiment_data(
+                        st.session_state.experiment_data, new_df
+                    )
+                    # Recalculate phytochemical values for uvvis rows
+                    st.session_state.experiment_data = apply_phytochemical_calculations(
+                        st.session_state.experiment_data
+                    )
+                    save_experiment_data_to_disk(st.session_state.experiment_data)
+                st.session_state.t3_imported.add(filename)
+                st.session_state.t3_pending.pop(filename, None)
+                st.success(msg)
                 st.rerun()
             else:
                 st.error(msg)
     with bc2:
-        if st.button("ข้ามไฟล์นี้", key=f"conc_skip_{filename}"):
-            st.session_state.conc_imported.add(filename)
-            st.session_state.conc_pending.pop(filename, None)
+        if st.button("ข้ามไฟล์นี้", key=f"t3_skip_{filename}_{selected_sheet}"):
+            st.session_state.t3_imported.add(filename)
+            st.session_state.t3_pending.pop(filename, None)
             st.rerun()
 
 
@@ -270,65 +326,14 @@ with st.sidebar:
         "Upload XLSX / CSV Data (รองรับหลายไฟล์พร้อมกัน + สะสมข้อมูล)",
         type=["xlsx", "xls", "csv"],
         accept_multiple_files=True,
-        help="อัปโหลดไฟล์ Excel (.xlsx) ที่มีโครงสร้าง 5 Sheet (Control_GM, LED_GM, Control_F, LED_F1, LED_F2) หรือไฟล์ CSV ข้อมูลงานวิจัย — ระบบรองรับการอัปโหลดหลายไฟล์พร้อมกันและสะสมข้อมูลแบบไม่ทับกัน (แนะนำตั้งชื่อไฟล์ตามรูปแบบ DD-MM-YYYY.xlsx เช่น 04-08-2026.xlsx) | รองรับไฟล์ concentration (mg/L) — ชื่อไฟล์ต้องมีคำว่า 'concentration' (เช่น concentration Control-GM.xlsx) หรือเพิ่มคอลัมน์ Treatment/Date ในไฟล์ ระบบจะถามเงื่อนไขที่ขาดตอนอัปโหลด"
+        help="อัปโหลดไฟล์ Excel (.xlsx) ที่มีโครงสร้าง 5 Sheet (Control_GM, LED_GM, Control_F, LED_F1, LED_F2) หรือไฟล์ CSV ข้อมูลงานวิจัย — ระบบรองรับการอัปโหลดหลายไฟล์พร้อมกันและสะสมข้อมูลแบบไม่ทับกัน (แนะนำตั้งชื่อไฟล์ตามรูปแบบ DD-MM-YYYY.xlsx เช่น 04-08-2026.xlsx) | สำหรับข้อมูล Harvest / UV-Vis / Pigment Concentration ให้อัปโหลดที่แท็บ 🔬 Harvest & Lab Results"
     )
 
     if uploaded_files:
         imported_names = []
-        concentration_imported = False
-
-        # ----- Concentration files: stage raw rows, then import via dialog -----
-        # Concentration files are NOT imported immediately. Instead, their raw
-        # rows are staged in session state and a dialog lets the user select
-        # rows (checkbox + shift-range) and assign treatment + date.
-        conc_files = [
-            f for f in uploaded_files
-            if f.name.lower().endswith((".xlsx", ".xls")) and "concentration" in f.name.lower()
-        ]
-        if conc_files:
-            if "conc_pending" not in st.session_state:
-                st.session_state.conc_pending = {}  # {filename: raw_df}
-            if "conc_imported" not in st.session_state:
-                st.session_state.conc_imported = set()  # filenames already imported
-            for cf in conc_files:
-                if cf.name in st.session_state.conc_imported:
-                    continue  # already imported this run
-                if cf.name not in st.session_state.conc_pending:
-                    raw_df, read_msg = read_concentration_excel(cf.getvalue())
-                    if raw_df.empty:
-                        st.error(f"{cf.name}: {read_msg}")
-                        st.session_state.conc_imported.add(cf.name)
-                        continue
-                    st.session_state.conc_pending[cf.name] = raw_df
-
-        # Default date for the dialog: latest harvest date in experiment_data, else today
-        default_date = datetime.date.today()
-        exp_for_default = st.session_state.experiment_data
-        if not exp_for_default.empty and "record_date" in exp_for_default.columns:
-            latest_dates = exp_for_default["record_date"].dropna()
-            if not latest_dates.empty:
-                try:
-                    parsed = pd.to_datetime(latest_dates, errors="coerce").dropna()
-                    if not parsed.empty:
-                        default_date = parsed.max().date()
-                except Exception:
-                    pass
-
-        # Open the import dialog for the first pending concentration file.
-        pending_names = [
-            n for n in st.session_state.conc_pending.keys()
-            if n not in st.session_state.conc_imported
-        ]
-        if pending_names:
-            _open_concentration_import_dialog(pending_names[0], default_date)
 
         for uploaded_file in uploaded_files:
             if uploaded_file.name.endswith((".xlsx", ".xls")):
-                # Concentration files are handled by the dialog above; skip here.
-                if "concentration" in uploaded_file.name.lower():
-                    if uploaded_file.name in st.session_state.get("conc_imported", set()):
-                        concentration_imported = True
-                    continue
                 new_df, msg = parse_uploaded_excel(uploaded_file.getvalue(), uploaded_file.name)
                 if not new_df.empty:
                     st.session_state.experiment_data = merge_accumulative_experiment_data(
@@ -365,13 +370,6 @@ with st.sidebar:
             st.info(
                 f"📊 รวมข้อมูลเข้ากับข้อมูลเดิมเรียบร้อยแล้ว — ไฟล์ที่นำเข้า: {len(imported_names)} ไฟล์ "
                 f"({', '.join(imported_names)}) | รวมทั้งหมด {total_rows} แถว (สะสม ไม่ทับซ้อน)"
-            )
-        if concentration_imported:
-            st.info(
-                f"🧪 ข้อมูล concentration (mg/L) รวมทั้งหมด "
-                f"{len(st.session_state.concentration_data)} แถว replicate "
-                f"({st.session_state.concentration_data['treatment'].nunique()} แปลง) — "
-                f"ค่าเฉลี่ยรายต้นถูกอัปเดตเข้า experiment_data แล้ว"
             )
                 
     st.markdown("---")
@@ -420,6 +418,8 @@ with st.sidebar:
                 st.session_state.concentration_data = generate_empty_concentration_data()
                 st.session_state.conc_pending = {}
                 st.session_state.conc_imported = set()
+                st.session_state.t3_pending = {}
+                st.session_state.t3_imported = set()
                 st.session_state.logger_ppfd = pd.DataFrame()
                 st.session_state.logger_temp = pd.DataFrame()
                 st.session_state.ppfd_channel_mapping = {}
@@ -1021,7 +1021,59 @@ with tab2:
 with tab3:
     st.subheader("🔬 Harvest Yield & Spectrophotometric Lab Entry")
     st.markdown("กรอกข้อมูลผลผลิต (Harvest Yield) และค่าดูดกลืนแสง UV-Vis (OD Absorbance) จัดเรียงตามแปลงทดลอง — **บันทึกอัตโนมัติ**ทุกครั้งที่แก้ไข")
-    
+
+    # ===================== Tab 3 multi-sheet import =====================
+    st.markdown("##### 📥 นำเข้าข้อมูล (Harvest / UV-Vis / Pigment Concentration)")
+    st.caption(
+        "อัปโหลดไฟล์ Excel ที่มีข้อมูล Harvest / UV-Vis / Pigment Concentration — "
+        "ระบบอ่านทุกชีท ให้เลือกชีททีละตัวใน dialog ตรวจจับประเภทข้อมูลอัตโนมัติ "
+        "(แม้ชื่อชีทไม่ตรงกับระบบ) แล้วกำหนดแปลง + วันที่ก่อนนำเข้า"
+    )
+    tab3_files = st.file_uploader(
+        "อัปโหลดไฟล์ Excel (รองรับหลายชีท)",
+        type=["xlsx", "xls"],
+        accept_multiple_files=True,
+        key="tab3_uploader",
+        help="อัปโหลดไฟล์ Excel ที่มีข้อมูล Harvest / UV-Vis / Pigment Concentration — ระบบจะอ่านทุกชีทแล้วให้เลือกชีทใน dialog",
+    )
+    if tab3_files:
+        if "t3_pending" not in st.session_state:
+            st.session_state.t3_pending = {}  # {filename: {sheet_name: raw_df}}
+        if "t3_imported" not in st.session_state:
+            st.session_state.t3_imported = set()  # filenames already imported
+        for tf in tab3_files:
+            if tf.name in st.session_state.t3_imported:
+                continue
+            if tf.name not in st.session_state.t3_pending:
+                sheets, read_msg = read_tab3_excel_sheets(tf.getvalue())
+                if not sheets:
+                    st.error(f"{tf.name}: {read_msg}")
+                    st.session_state.t3_imported.add(tf.name)
+                    continue
+                st.session_state.t3_pending[tf.name] = sheets
+
+        # Default date for the dialog: latest harvest date in experiment_data, else today
+        default_date_t3 = datetime.date.today()
+        exp_for_default_t3 = st.session_state.experiment_data
+        if not exp_for_default_t3.empty and "record_date" in exp_for_default_t3.columns:
+            latest_dates_t3 = exp_for_default_t3["record_date"].dropna()
+            if not latest_dates_t3.empty:
+                try:
+                    parsed_t3 = pd.to_datetime(latest_dates_t3, errors="coerce").dropna()
+                    if not parsed_t3.empty:
+                        default_date_t3 = parsed_t3.max().date()
+                except Exception:
+                    pass
+
+        # Open the import dialog for the first pending tab3 file.
+        pending_names_t3 = [
+            n for n in st.session_state.t3_pending.keys()
+            if n not in st.session_state.t3_imported
+        ]
+        if pending_names_t3:
+            _open_tab3_import_dialog(pending_names_t3[0], default_date_t3)
+    st.markdown("---")
+
     sub_combined_tabs = st.tabs(TREATMENTS)
     df_exp_h = st.session_state.experiment_data.copy()
     
